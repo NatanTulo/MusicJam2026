@@ -78,6 +78,13 @@ class OpenCVCamera(FrameSource):
             except cv2.error:
                 pass
 
+        if self._is_file:
+            # plik odtwarzamy w jego wlasnym tempie (vtest.avi ma 10 fps) - inaczej ludzie
+            # "biegaja" 3x szybciej, a tracker czesciej ich gubi i nadaje nowe ID
+            native = cap.get(cv2.CAP_PROP_FPS)
+            if native and 1 <= native <= 120:
+                self.target_fps = native
+
         self._cap = cap
         self._running = True
         self._thread = threading.Thread(target=self._loop, name="camera", daemon=True)

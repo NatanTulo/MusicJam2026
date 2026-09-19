@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "fetch:data": "node scripts/fetch-bathymetry.mjs",
     "fetch:fullres": "node scripts/build-fullres.mjs",
-    "fetch:borders": "node scripts/extract-borders.mjs"
+    "fetch:borders": "node scripts/extract-borders.mjs",
+    "test": "node --test tests/"
   },
   "keywords": [],
   "author": "",

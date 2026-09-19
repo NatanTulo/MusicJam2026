@@ -5,8 +5,12 @@ Ryba żyje tak długo, jak człowiek jest w kadrze: podąża za nim, przyspiesza
 przyspiesza, a gdy wyjdzie — odpływa poza ekran. W tle pływa ławica, która reaguje
 na ryby-awatary.
 
+Ryby trafiają do **morza w przeglądarce** (`../web_visualization`, Batymetry Boat —
+prawdziwe dno Bałtyku) przez mostek `serve.py`. Lokalny podgląd w pygame (`app.py`)
+nadal działa, ale jest tymczasowy.
+
 Docelowo całość chodzi na **Raspberry Pi 5 (8 GB)** z kamerą, bez akceleratora.
-Teraz działa na laptopie z kamerą internetową; kod jest ten sam.
+Na razie źródłem obrazu jest **nagranie testowe** zamiast kamery (patrz niżej).
 
 ```
   kamera ──► detekcja osób ──► tracking (ID) ──► mapowanie ──► ryby ──► render
@@ -23,9 +27,56 @@ interpolują między rzadkimi aktualizacjami celu i nic nie „skacze”.
 
 ```bash
 pip install -r requirements.txt
-bash models/download_models.sh        # NanoDet-Plus, 3.8 MB
-python app.py                         # kamera 0
+bash models/download_models.sh           # NanoDet-Plus, 3.8 MB
+bash media/download_sample_video.sh      # nagranie testowe, 8 MB (domyślne źródło)
+
+python serve.py                          # detekcja -> ryby w morzu (web_visualization)
+python app.py                            # albo: lokalny podgląd w pygame
 ```
+
+## Źródło obrazu: nagranie zamiast kamery
+
+Do czasu podpięcia kamery wszystko czyta **nagranie `media/vtest.avi`** (ludzie
+chodzący po placu, próbka z OpenCV), zapętlone i odtwarzane w swoim tempie.
+
+**Zmiana źródła — jedno miejsce: [`config.py`](config.py), linia 18:**
+
+```python
+SOURCE: int | str = "media/vtest.avi"   # <- tu
+#   0                 kamera USB / wbudowana w laptopa
+#   "picam"           kamera CSI na Raspberry Pi 5
+#   "inny_film.mp4"   dowolny plik wideo
+```
+
+i linia 22 obok — `MIRROR = True` dla kamery patrzącej na ludzi (ruch w prawo =
+ryba w prawo), `False` dla nagrania. Z `config.py` korzystają `serve.py`, `app.py`
+i narzędzia. Jednorazowo, bez edycji pliku: `python serve.py --camera 0 --mirror`.
+
+## Mostek do morza: `serve.py`
+
+```
+ film/kamera ─> detekcja ─> tracking ─> mapowanie (u,v) ──SSE──> przeglądarka: Batymetry Boat
+                                                        http://<host>:8765/fish
+```
+
+- `GET /fish` — strumień Server-Sent Events, ~12 wiadomości/s; `GET /state` — ostatnia
+  wiadomość (podgląd: `curl localhost:8765/state`).
+- SSE, bo dane płyną w jedną stronę, przeglądarka sama wznawia połączenie, a serwer
+  to biblioteka standardowa Pythona — **zero nowych zależności na RPi**.
+- Nasłuchuje na `0.0.0.0`, więc gra może działać na innym urządzeniu w tej samej sieci.
+- `--preview` otwiera okno z obrazem i ramkami ludzi. `--max-age 2.0` (domyślnie)
+  pamięta zgubioną osobę 2 s — mniej „nowych” ryb, gdy ktoś kogoś zasłoni.
+
+Wiadomość (jedna ryba = jedna osoba):
+
+```json
+{"type":"fish","frame":812,"source":"media/vtest.avi",
+ "stats":{"people":11,"detect_fps":12.0,"camera_fps":10.0,"latency_ms":21},
+ "fish":[{"id":7,"u":0.41,"v":0.62,"scale":1.1,"excitement":0.2,"confidence":0.8,"fresh":true}]}
+```
+
+`u, v` to pozycja na podłodze w `[0,1]` (u: lewo→prawo, v: daleko→blisko kamery).
+Gdzie ta podłoga leży na mapie Bałtyku, decyduje strona web (`src/fish/config.js`).
 
 Bez pobierania modelu: `python app.py --detector hog` (wbudowany w OpenCV HOG —
 działa od razu, ale wykrywa znacznie gorzej; tylko do sprawdzenia, że wszystko się spina).
@@ -33,7 +84,8 @@ działa od razu, ale wykrywa znacznie gorzej; tylko do sprawdzenia, że wszystko
 Inne warianty:
 
 ```bash
-python app.py --camera nagranie.mp4 --no-mirror   # powtarzalny test z pliku
+python app.py --camera 0 --mirror                 # kamera laptopa zamiast nagrania
+python app.py --camera nagranie.mp4               # inny plik
 python app.py --camera picam --fullscreen         # RPi5, kamera CSI
 python app.py --shoal 0                           # bez ławicy tła, same „ludzkie” ryby
 python app.py --debug                             # od razu z podglądem kamery
@@ -65,6 +117,9 @@ Gdy akwarium idzie na pełnym ekranie i drugie okno przeszkadza: `--no-camera-wi
 
 | Plik | Rola |
 |---|---|
+| **`config.py`** | **Źródło obrazu** (nagranie/kamera), lustro, port mostka. |
+| **`serve.py`** | Mostek do przeglądarki (SSE): detekcja → ryby w Batymetry Boat. |
+| `media/` | Nagranie testowe (`download_sample_video.sh`, poza gitem). |
 | `people_detektion/types.py` | **Kontrakt**: `Detection`, `Person`, `PeopleFrame`. Wszystkie współrzędne znormalizowane do `[0,1]`, więc zmiana rozdzielczości kamery nic nie psuje. |
 | `people_detektion/camera.py` | Wątek grabbera — zawsze najnowsza klatka. Backendy: OpenCV (USB/plik) i picamera2 (CSI na RPi). |
 | `people_detektion/detector.py` | NanoDet-Plus przez onnxruntime + fallback HOG. Bierzemy tylko klasę COCO `person`. |
@@ -81,15 +136,23 @@ Gdy akwarium idzie na pełnym ekranie i drugie okno przeszkadza: `--no-camera-wi
 Reszta systemu nie wie nic o rybach, a grafika nie wie nic o kamerze. Jedyny styk to:
 
 ```python
-FishTarget(person_id, x, y, scale, excitement, confidence, fresh)
+FishTarget(person_id, u, v, x, y, scale, excitement, confidence, fresh)
 ```
 
 - `person_id` — tożsamość z trackera; ta sama osoba zawsze dostaje tę samą rybę (i ten sam kolor),
-- `x, y` — cel w akwarium `[0,1]`; `y` liczone ze **stóp** (dolna krawędź bboxa), bo to lepszy
-  wskaźnik pozycji w przestrzeni niż środek sylwetki,
+- `u, v` — pozycja na podłodze `[0,1]` dla morza w przeglądarce; `v` liczone ze **stóp**
+  (dolna krawędź bboxa), bo to lepszy wskaźnik pozycji w przestrzeni niż środek sylwetki,
+- `x, y` — to samo w układzie akwarium pygame,
 - `scale` — z wysokości bboxa, czyli głębia: bliżej kamery = większa ryba,
 - `excitement` — z prędkości człowieka; ryba szybciej macha ogonem i mocniej rusza,
 - `fresh=False` — detektor chwilowo zgubił człowieka; ryba krąży w miejscu zamiast znikać.
+
+**Rozrzucenie po mapie.** Ludzie zwykle zajmują tylko fragment kadru (w nagraniu
+chodzą po górnej połowie). `AutoRange` uczy się z ostatnich ~1500 detekcji, jaki
+fragment kadru jest faktycznie używany (percentyle 3–97 %), i rozciąga go na całe
+łowisko. Do tego każda osoba dostaje stały mały offset z ID (złoty kąt), żeby dwie
+osoby stojące obok siebie nie dawały ryb w jednym punkcie. Przyciemniony pas
+w podglądzie kamery pokazuje wyuczony zakres.
 
 Podmiana mapowania (inna geometria sceny, kalibracja projektora, sonifikacja) nie wymaga
 dotykania ani pipeline'u, ani renderera.
@@ -102,7 +165,8 @@ dotykania ani pipeline'u, ani renderera.
 | Fałszywe wykrycia | `--score 0.5`, `--min-hits 5` |
 | Ryby „skaczą” za osobą | niższe `smoothing` w `PeopleTracker` (domyślnie 0.55) |
 | Ryby zbyt ospałe | `base_speed` / `max_force` w `FishWorld` |
-| Ludzie nie sięgają dołu akwarium | `y_in` / `y_out` w `PersonToFishMapper` — domyślnie zakładamy, że stopy są w dolnych 75 % kadru |
+| Ryby skupione w jednej części łowiska | `AutoRange` potrzebuje ~60 detekcji na naukę; stały zakres: `PersonToFishMapper(auto_range=False, y_in=...)` |
+| Za dużo „nowych” ryb po zasłonięciach | `serve.py --max-age 3` |
 | Zbyt duże opóźnienie | `--detect-fps` w górę, `--cam-width 480` w dół |
 
 ## Raspberry Pi 5

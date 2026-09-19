@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { BathymetryGrid, depthColor } from './bathymetry.js';
+import { FishLayer } from './fish/index.js';
+import { SoundController } from './sound/controller.js';
 
 // ---------------------------------------------------------------------------
 // Konfiguracja
@@ -28,6 +30,10 @@ const hud = {
   waterXray: $('water-xray'), followCam: $('follow-cam'),
   tempo: $('tempo-select'), tempoBadge: $('tempo-badge'),
   bordersToggle: $('borders-toggle'), labelsToggle: $('labels-toggle'),
+  fishStatus: $('fish-status'), fishBadge: $('fish-badge'), fishDemo: $('fish-demo'),
+  fishLabels: $('fish-labels'), fishGoto: $('fish-goto'),
+  sndToggle: $('snd-toggle'), sndBadge: $('snd-badge'), hydDepth: $('hyd-depth'),
+  hydVal: $('hyd-val'), seaState: $('sea-state'), seaStateVal: $('sea-state-val'), sndInfo: $('snd-info'),
 };
 
 // ---------------------------------------------------------------------------
@@ -55,6 +61,8 @@ let follow = true;
 let aground = false, outOfMap = false;
 let lastEchoPush = 0, lastTrailPush = 0, lastHud = 0;
 let stepTime = 0; // czas symulacji dla kroku testowego _step (gdy rAF stoi)
+let fishLayer = null; // ryby = ludzie z kamery (src/fish/)
+let sound = null;     // hydrofon + dźwięk morza (src/sound/)
 
 const state = {
   lat: 54.52, lon: 18.95,
@@ -79,6 +87,14 @@ window.boatAPI = {
     tex: terrainMesh?.material.map ? [terrainMesh.material.map.image.width, terrainMesh.material.map.image.height] : null,
     heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null,
   }),
+  // Ryby i dźwięk (src/fish, src/sound)
+  getFish: () => fishLayer?.list().map(({ id, species, lat, lon, depth, seabed, state, alpha }) =>
+    ({ id, species, lat, lon, depth, seabed, state, alpha })) ?? [],
+  getFishSource: () => fishLayer?.sourceLabel,
+  setFishDemo: (on) => { if (fishLayer) { fishLayer.demoOn = !!on; hud.fishDemo.checked = !!on; } },
+  getHydrophoneDepth: () => sound?.depth,
+  setHydrophoneDepth: (m) => { if (sound) { sound.wantedDepth = m; hud.hydDepth.value = String(m); } },
+  getSoundInfo: () => sound?.engine.info,
   getSpeedScale: () => speedScale,
   setSpeedScale: (s) => setTempo(s),
   // Hak testowy: deterministyczny krok fizyki + render, gdy rAF jest zdławiony
@@ -87,6 +103,7 @@ window.boatAPI = {
     if (!grid) return null;
     stepTime += dt;
     updateBoat(Math.min(dt, 0.05), stepTime);
+    updateSeaLife(Math.min(dt, 0.05), stepTime);
     animateWater(stepTime);
     updateHud(stepTime);
     controls.update();
@@ -159,6 +176,14 @@ function initScene() {
   trailLine = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xffe08a }));
   trailLine.frustumCulled = false;
   scene.add(trailLine);
+
+  fishLayer = new FishLayer(scene, {
+    status: hud.fishStatus, badge: hud.fishBadge, demo: hud.fishDemo, labels: hud.fishLabels,
+  });
+  sound = new SoundController(scene, {
+    toggle: hud.sndToggle, badge: hud.sndBadge, depth: hud.hydDepth, depthVal: hud.hydVal,
+    seaState: hud.seaState, info: hud.sndInfo,
+  });
 
   clock = new THREE.Clock();
   addEventListener('resize', () => {
@@ -777,6 +802,7 @@ function drawMini() {
     i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
   });
   ctx.stroke();
+  fishLayer?.drawMinimap(ctx, toXY);
   // łódka
   const [bx, by] = toXY(state.lat, state.lon);
   ctx.save();
@@ -820,6 +846,7 @@ let upgradeToken = 0;
 
 function refreshMeshes() {
   buildTerrain();
+  fishLayer?.setGrid(grid);
   try {
     buildBorders();
   } catch (err) {
@@ -934,10 +961,34 @@ function bindInput() {
     showBorders = hud.bordersToggle.checked;
     if (borderGroup) borderGroup.visible = showBorders;
   });
+  hud.fishGoto.addEventListener('click', () => grid && showFishingGround());
+  hud.seaState.addEventListener('input', () => {
+    hud.seaStateVal.textContent = hud.seaState.value;
+  });
   hud.labelsToggle.addEventListener('change', () => {
     showLabels = hud.labelsToggle.checked;
     for (const { sprite } of labelSprites) sprite.visible = showLabels;
   });
+}
+
+// ---------------------------------------------------------------------------
+// Ryby + dźwięk
+// ---------------------------------------------------------------------------
+function updateSeaLife(dt, t) {
+  fishLayer.update(dt, t, { camera, VEX });
+  sound.update(dt, t, { state, grid, fish: fishLayer.list(), VEX, camera, boatY: boat.position.y });
+}
+
+/** Kamera nad łowisko: całe widać z góry, pod kątem, żeby było czuć głębokość. */
+function showFishingGround() {
+  const c = fishLayer.groundCenter();
+  const { x, z } = grid.latLonToWorld(c.lat, c.lon);
+  follow = false;
+  hud.followCam.checked = false;
+  const span = Math.max(c.widthM, c.heightM);
+  controls.target.set(x, -40 * VEX, z);
+  camera.position.set(x, span * 0.75, z + span * 0.65);
+  toast('Łowisko: ryby = ludzie z kamery. C = powrót do łódki');
 }
 
 // ---------------------------------------------------------------------------
@@ -949,6 +1000,7 @@ function loop() {
   const t = clock.elapsedTime;
   if (grid) {
     updateBoat(dt, t);
+    updateSeaLife(dt, t);
     animateWater(t);
     updateHud(t);
     updateLabelScales();

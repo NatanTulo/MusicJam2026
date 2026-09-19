@@ -11,3 +11,6 @@ recordings/
 node_modules/
 dist/
 tmp-pwtest/
+
+# nagrania testowe (people_detection/media/download_sample_video.sh)
+*.avi

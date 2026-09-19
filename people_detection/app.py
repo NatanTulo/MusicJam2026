@@ -10,8 +10,9 @@ Ryby interpoluja miedzy rzadkimi aktualizacjami celow, wiec obraz jest gladki
 nawet gdy detekcja na RPi5 chodzi w 8 Hz.
 
 Przyklady:
-    python app.py                               # kamera 0, NanoDet, podglad 1280x720
-    python app.py --camera nagranie.mp4         # z pliku (powtarzalne testy)
+    python app.py                               # zrodlo z config.py (domyslnie nagranie testowe)
+    python app.py --camera 0 --mirror           # kamera laptopa
+    python app.py --camera nagranie.mp4         # dowolny plik (powtarzalne testy)
     python app.py --camera picam --fullscreen   # RPi5 + kamera CSI
     python app.py --detector hog                # bez pobierania modelu
 """
@@ -21,6 +22,7 @@ import argparse
 import os
 import sys
 
+import config
 from fish.mapping import PersonToFishMapper
 from fish.world import FishWorld
 from people_detektion.pipeline import PeoplePipeline
@@ -30,11 +32,13 @@ def parse_args(argv=None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 
     cam = p.add_argument_group("kamera")
-    cam.add_argument("--camera", default="0", help="indeks (0), sciezka do pliku wideo albo 'picam' (RPi5 CSI)")
+    cam.add_argument("--camera", default=config.SOURCE,
+                     help=f"indeks (0), plik wideo albo 'picam' (RPi5 CSI); domyslnie z config.py: {config.SOURCE!r}")
     cam.add_argument("--cam-width", type=int, default=640)
     cam.add_argument("--cam-height", type=int, default=480)
     cam.add_argument("--cam-fps", type=int, default=30)
-    cam.add_argument("--no-mirror", action="store_true", help="wylacza lustro (domyslnie obraz jest odbity jak w lustrze)")
+    cam.add_argument("--mirror", action=argparse.BooleanOptionalAction, default=config.MIRROR,
+                     help="odbicie lustrzane obrazu (domyslnie z config.py)")
 
     det = p.add_argument_group("detekcja")
     det.add_argument("--detector", default="auto", choices=["auto", "nanodet", "hog"])
@@ -72,9 +76,9 @@ def main(argv=None) -> int:
     from fish.render_pygame import Aquarium  # import po ustawieniu SDL_VIDEODRIVER
 
     pipeline = PeoplePipeline(
-        camera=args.camera,
+        camera=config.resolve_source(args.camera),
         width=args.cam_width, height=args.cam_height, camera_fps=args.cam_fps,
-        mirror=not args.no_mirror,
+        mirror=args.mirror,
         detector=args.detector, model_path=args.model,
         score_threshold=args.score, iou_threshold=args.nms,
         num_threads=args.threads, detect_fps=args.detect_fps,
@@ -98,7 +102,7 @@ def main(argv=None) -> int:
         try:
             from people_detektion.preview_window import CameraWindow
             camera_window = CameraWindow(
-                width=args.preview_width, position=(40, 40), y_band=mapper.y_in
+                width=args.preview_width, position=(40, 40), y_band=mapper.current_y_band
             )
             aquarium.camera_window = camera_window
         except Exception as exc:   # brak drugiego okna nie moze zabic instalacji

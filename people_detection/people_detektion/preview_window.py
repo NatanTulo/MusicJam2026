@@ -12,7 +12,7 @@ Uzywa pygame._sdl2.video - drugie okno SDL obok tego z pygame.display.
 from __future__ import annotations
 
 import colorsys
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple, Union
 
 import numpy as np
 import pygame
@@ -39,10 +39,10 @@ class CameraWindow:
         width: int = 640,
         title: str = "Kamera - kogo widze",
         position: Optional[Tuple[int, int]] = None,
-        y_band: Optional[Tuple[float, float]] = None,
+        y_band: Union[None, Tuple[float, float], Callable[[], Tuple[float, float]]] = None,
     ) -> None:
         self.req_width = width
-        self.y_band = y_band          # pionowy zakres kadru uzywany przez mapowanie
+        self.y_band = y_band          # pionowy zakres kadru uzywany przez mapowanie (albo funkcja go zwracajaca)
         self.visible = True
         self.alive = True
 
@@ -108,7 +108,8 @@ class CameraWindow:
         """
         if self.y_band is None:
             return
-        top, bottom = int(self.y_band[0] * h), int(self.y_band[1] * h)
+        band = self.y_band() if callable(self.y_band) else self.y_band   # mapper uczy sie zakresu w locie
+        top, bottom = int(band[0] * h), int(band[1] * h)
         shade = pygame.Surface((w, h), pygame.SRCALPHA)
         if top > 0:
             shade.fill((0, 0, 0, 105), (0, 0, w, top))

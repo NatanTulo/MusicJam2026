@@ -46,6 +46,63 @@ Dwa regiony w grze (przełączane z GUI):
   [tiny-world-map](https://github.com/tinyworldmap/tiny-world-map) © OpenStreetMap
   contributors, licencja ODbL — lokalny wyciąg generuje `npm run fetch:borders`
 
+## Ryby = ludzie z kamery
+
+Każda osoba wykryta przez `people_detection` staje się rybą w morzu.
+
+```bash
+cd ../people_detection && python serve.py     # detekcja (na razie z nagrania testowego)
+npm run dev                                   # gra: panel "Ryby — ludzie z kamery"
+```
+
+Bez detekcji: zaznacz **tryb demo** w panelu albo otwórz `?demo=1` — sztuczni ludzie
+chodzą po podłodze. Przycisk **„Pokaż łowisko”** ustawia kamerę nad rybami (`C` wraca do łódki).
+
+- **Gdzie są ryby:** podłoga z kamery jest rozłożona na **łowisko** — prostokąt w Zatoce
+  Gdańskiej wokół startu łódki (~9 × 7 km), zmiana w
+  [`src/fish/config.js`](src/fish/config.js), linia 16 (`ground`). Dno opada tam
+  z ~20 do ~70 m, więc głębokości są naprawdę różne. Cel na lądzie (np. Mierzeja)
+  jest przesuwany do najbliższej wody; ryby omijają płycizny < 4 m.
+- **Na jakiej głębokości:** gatunek (stały dla osoby) wyznacza warstwę jako ułamek słupa
+  wody pod rybą: szprot 5–28 %, śledź 28–58 %, dorsz 60–86 %, flądra 88–97 %.
+  Nad Głębią Gdańską ta sama ryba pływa więc głębiej niż nad płycizną. W warstwie
+  powoli faluje, a gdy człowiek się rusza — wypływa wyżej.
+- **Cykl życia:** człowiek zgubiony przez detektor → ryba krąży i miga (1,5 s);
+  człowiek wyszedł → ryba odpływa od środka łowiska i gaśnie (3 s).
+- **Kolor ryby = kolor ramki osoby** w podglądzie kamery (`python serve.py --preview`).
+- Adres mostka: domyślnie `http://<host strony>:8765/fish`, inny: `?fish=http://ip:8765/fish`,
+  wyłączenie: `?fish=off`.
+
+## Dźwięk: hydrofon łódki
+
+Przycisk **„🔊 Włącz dźwięk”** (przeglądarka wymaga kliknięcia). Łódka słucha
+hydrofonem na linie (`Q`/`E` w górę/w dół, suwak w panelu). Ryby grają nuty,
+a woda i dno Bałtyku je kształtują: opóźnienie ~0,69 s/km, cichnięcie i ciemnienie
+z odległością, echa od powierzchni i dna, cień za wzniesieniami dna. Skala muzyki
+zależy od dna pod łódką. Tło morza zmienia się z głębokością hydrofonu.
+
+**Laboratorium dźwięku:** [`sound-lab.html`](sound-lab.html) (`npm run dev` →
+http://127.0.0.1:5173/sound-lab.html) — przekrój morza, przeciągane ryby i hydrofon,
+suwaki, widmo, liczby. Ten sam silnik co w grze.
+
+Koncepcja, wzory, uproszczenia i pomiary: **[docs/dzwiek.md](docs/dzwiek.md)**.
+
+```bash
+npm test      # testy fizyki dźwięku (node --test)
+```
+
+| Plik | Rola |
+|---|---|
+| `src/fish/config.js` | łowisko, adres mostka, prędkości ryb |
+| `src/fish/species.js` | gatunki: warstwa wody, rozmiar, głos |
+| `src/fish/fishSim.js` | pozycja, głębokość, omijanie lądu, cykl życia |
+| `src/fish/fishRender.js` | ryby w Three.js (stały rozmiar ekranowy, linia głębokości, kółko na tafli) |
+| `src/fish/link.js`, `demo.js` | źródło celów: mostek SSE albo demo |
+| `src/sound/acoustics.js` | fizyka: c(z), pochłanianie, drogi, odbicia, cień (czyste funkcje) |
+| `src/sound/music.js` | skale, rytm, nuta z głębokości |
+| `src/sound/engine.js` | silnik WebAudio (gra + laboratorium, też offline) |
+| `src/sound/controller.js` | dźwięk w grze: panel, `Q`/`E`, lina hydrofonu w 3D |
+
 ## Dostęp do głębokości (API)
 
 W konsoli przeglądarki (i dla przyszłej logiki gry):
@@ -57,6 +114,9 @@ boatAPI.getPosition()    // { lat, lon }
 boatAPI.getSpeedKnots()  // prędkość w węzłach
 boatAPI.getHeadingDeg()  // kurs 0–360°
 boatAPI._step(dt)        // deterministyczny krok fizyki (do testów headless)
+boatAPI.getFish()        // [{ id, species, lat, lon, depth, seabed, state, alpha }]
+boatAPI.getSoundInfo()   // co słyszy hydrofon: ryby, opóźnienia, poziomy, skala
+boatAPI.setHydrophoneDepth(m)
 ```
 
 ## Jak dodać nowe morze?

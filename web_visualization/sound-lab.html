@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Laboratorium dźwięku morza — MusicJam2026</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎧</text></svg>" />
+  <link rel="stylesheet" href="./src/sound-lab.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>🎧 Laboratorium dźwięku morza</h1>
+      <p class="sub">Przekrój morza od łódki w bok. <strong>Przeciągaj ryby i hydrofon</strong>, zmieniaj
+        głębokość i dno — słuchaj, jak zmienia się brzmienie. Ten sam silnik gra w
+        <a href="./index.html">Batymetry Boat</a>.</p>
+    </div>
+    <button id="play" class="play">▶ Włącz dźwięk</button>
+  </header>
+
+  <main>
+    <section class="stage">
+      <canvas id="section"></canvas>
+      <div class="legend">
+        <span><i class="l direct"></i> droga bezpośrednia</span>
+        <span><i class="l surface"></i> odbicie od powierzchni (odwraca fazę)</span>
+        <span><i class="l bottom"></i> odbicie od dna</span>
+        <span><i class="l blocked"></i> zasłonięta przez dno</span>
+        <span class="muted">grubość linii = głośność tej drogi</span>
+      </div>
+      <canvas id="spectrum"></canvas>
+      <table id="fish-table">
+        <thead><tr>
+          <th>gra</th><th>ryba</th><th>nuta</th><th>odległość</th><th>opóźnienie</th>
+          <th title="strata na drodze bezpośredniej: rozchodzenie + pochłanianie">strata</th>
+          <th title="dodatkowa strata za wzniesieniem dna">cień</th><th>poziom</th><th>drogi (dB)</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <aside class="controls">
+      <label>Głębokość hydrofonu <strong><span id="depth-val">10</span> m</strong>
+        <input id="depth" type="range" min="0.5" max="100" step="0.5" value="10" /></label>
+      <label>Dno <select id="profile"></select></label>
+      <label>Stan morza <strong id="sea-val">2</strong>
+        <input id="sea" type="range" min="0" max="6" step="1" value="2" /></label>
+      <label title="1 = fizycznie. Na mapie o skali km efekt pochłaniania jest prawie niesłyszalny, dlatego domyślnie wzmacniamy go 20×.">
+        Pochłanianie × <strong id="abs-val">20</strong>
+        <input id="abs" type="range" min="1" max="60" step="1" value="20" /></label>
+      <label>Głośność <input id="vol" type="range" min="0" max="1" step="0.01" value="0.8" /></label>
+
+      <fieldset><legend>Warstwy</legend>
+        <label class="check"><input type="checkbox" data-layer="fish" checked /> ryby</label>
+        <label class="check"><input type="checkbox" data-layer="surface" checked /> fale przy powierzchni</label>
+        <label class="check"><input type="checkbox" data-layer="bubbles" checked /> pęcherzyki</label>
+        <label class="check"><input type="checkbox" data-layer="deep" checked /> szum głębin</label>
+        <label class="check"><input type="checkbox" data-layer="bottom" checked /> dno (osad, prąd)</label>
+        <label class="check"><input type="checkbox" data-layer="engine" /> silnik łódki</label>
+        <label class="check"><input type="checkbox" data-layer="ping" checked /> echosonda</label>
+      </fieldset>
+      <fieldset><legend>Drogi dźwięku</legend>
+        <label class="check"><input type="checkbox" data-path="direct" checked /> bezpośrednia</label>
+        <label class="check"><input type="checkbox" data-path="surface" checked /> od powierzchni</label>
+        <label class="check"><input type="checkbox" data-path="bottom" checked /> od dna</label>
+      </fieldset>
+
+      <div id="water" class="readout"></div>
+      <details>
+        <summary>Co tu słychać?</summary>
+        <ul class="explain">
+          <li><b>Płytko (0–5 m):</b> głośne fale i pęcherzyki, szum „oddycha” w rytmie falowania.
+            Ryby cichną: odbicie od powierzchni przychodzi prawie razem z dźwiękiem bezpośrednim
+            w odwróconej fazie i je wygasza (lustro Lloyda).</li>
+          <li><b>Średnio:</b> fale ciemnieją i cichną, ryby są najpełniejsze.</li>
+          <li><b>Przy dnie:</b> dudnienie głębin, syk osadu, echo od dna prawie bez opóźnienia.</li>
+          <li><b>Daleko:</b> ciszej, później i ciemniej (woda zjada wysokie tony).</li>
+          <li><b>Za grzbietem dna</b> (profil „grzbiet”): wysokie tony są ucinane, niskie się przeginają.</li>
+          <li><b>Skala</b> zależy od dna pod łódką: płycizna dur, stok moll, głębia in-sen.</li>
+        </ul>
+      </details>
+    </aside>
+  </main>
+
+  <script type="module" src="./src/soundLab.js"></script>
+</body>
+</html>
