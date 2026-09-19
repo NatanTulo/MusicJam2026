@@ -6,10 +6,11 @@ import { BathymetryGrid, depthColor } from './bathymetry.js';
 // Konfiguracja
 // ---------------------------------------------------------------------------
 const REGIONS = [
+  { id: 'baltic-full', name: 'Bałtyk — cały (EMODnet)', start: { lat: 54.52, lon: 18.95 } },
   { id: 'baltic-south', name: 'Bałtyk Południowy — Zatoka Gdańska (detal)', start: { lat: 54.52, lon: 18.95 } },
-  { id: 'baltic-overview', name: 'Bałtyk — przegląd (niski detal)', start: { lat: 55.2, lon: 18.5 } },
 ];
 let VEX = 20; // przewyższenie pionowe dna (wizualizacja)
+let speedScale = 1; // tempo testowe: mnożnik prędkości (1 = realistycznie)
 const MS_TO_KT = 1.94384;
 
 const $ = (id) => document.getElementById(id);
@@ -20,6 +21,7 @@ const hud = {
   echo: $('echo'), mini: $('mini'), toast: $('toast'),
   region: $('region-select'), vex: $('vex'), vexVal: $('vex-val'),
   waterXray: $('water-xray'), followCam: $('follow-cam'),
+  tempo: $('tempo-select'), tempoBadge: $('tempo-badge'),
 };
 
 // ---------------------------------------------------------------------------
@@ -54,6 +56,8 @@ window.boatAPI = {
   getSpeedKnots: () => Math.abs(state.speed) * MS_TO_KT,
   getHeadingDeg: () => (state.heading * 180 / Math.PI + 360) % 360,
   getRegion: () => grid?.id,
+  getSpeedScale: () => speedScale,
+  setSpeedScale: (s) => setTempo(s),
 };
 
 // ---------------------------------------------------------------------------
@@ -74,14 +78,14 @@ function initScene() {
   scene.background = new THREE.Color(0x87b5d6);
   scene.fog = new THREE.Fog(0x87b5d6, 25000, 160000);
 
-  camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 2, 500000);
+  camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 2, 5000000);
   camera.position.set(0, 90, 220);
 
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.minDistance = 15;
-  controls.maxDistance = 40000;
+  controls.maxDistance = 1500000; // da się oddalić na cały Bałtyk (~1300 km)
   controls.maxPolarAngle = Math.PI * 0.495;
 
   scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x1a3a52, 0.95));
@@ -312,7 +316,8 @@ function resetBoatToStart(startLat, startLon) {
 }
 
 function updateBoat(dt, t) {
-  const ACCEL = 7, MAX_FWD = 16, MAX_REV = -5;
+  // Tempo testowe skaluje i przyspieszenie, i prędkość maks. (1 = realistycznie).
+  const ACCEL = 7 * speedScale, MAX_FWD = 16 * speedScale, MAX_REV = -5 * speedScale;
   let throttleInput = 0;
   if (keys.w) throttleInput += 1;
   if (keys.s) throttleInput -= 1;
@@ -562,9 +567,20 @@ async function loadRegion(id) {
   document.title = `Batymetry Boat — ${reg.name}`;
 }
 
+/** Ustawia tempo testowe (mnożnik prędkości). Zwraca znormalizowaną wartość. */
+function setTempo(s) {
+  const allowed = [1, 2, 5, 10, 25, 50, 100];
+  speedScale = allowed.includes(Number(s)) ? Number(s) : 1;
+  if (hud.tempo) hud.tempo.value = String(speedScale);
+  if (hud.tempoBadge) {
+    hud.tempoBadge.style.display = speedScale > 1 ? 'inline-block' : 'none';
+    hud.tempoBadge.textContent = `TEST ×${speedScale}`;
+  }
+  return speedScale;
+}
+
 let toastTimer = 0;
-function toast(msg) {
-  hud.toast.textContent = msg;
+function toast(msg) {  hud.toast.textContent = msg;
   hud.toast.style.opacity = '1';
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => (hud.toast.style.opacity = '0'), 4200);
@@ -586,6 +602,10 @@ function bindInput() {
       resetBoatToStart(reg.start.lat, reg.start.lon);
       toast('Wrócono na pozycję startową');
     }
+    // Szybkie tempa testowe: 1 = realistycznie, 2 = 10×, 3 = 100×
+    if (e.code === 'Digit1') { setTempo(1); toast('Tempo realistyczne (1×)'); }
+    if (e.code === 'Digit2') { setTempo(10); toast('Tempo testowe 10×'); }
+    if (e.code === 'Digit3') { setTempo(100); toast('Tempo testowe 100×'); }
   });
   addEventListener('keyup', (e) => {
     if (map[e.code]) keys[map[e.code]] = false;
@@ -606,6 +626,10 @@ function bindInput() {
     applyVex();
   });
   hud.waterXray.addEventListener('change', applyWaterXray);
+  hud.tempo.addEventListener('change', () => {
+    setTempo(hud.tempo.value);
+    toast(speedScale > 1 ? `Tempo testowe ${speedScale}× (nierealistyczne)` : 'Tempo realistyczne (1×)');
+  });
   hud.followCam.addEventListener('change', () => {
     follow = hud.followCam.checked;
   });
@@ -623,6 +647,10 @@ function loop() {
     animateWater(t);
     updateHud(t);
   }
+  // Mgła dopasowana do oddalenia: czytelna z bliska i z wysokości całego Bałtyku.
+  const distToTarget = camera.position.distanceTo(controls.target);
+  scene.fog.near = distToTarget * 1.1;
+  scene.fog.far = distToTarget * 4.0;
   controls.update();
   renderer.render(scene, camera);
 }
@@ -636,6 +664,7 @@ async function main() {
   }
   initScene();
   bindInput();
+  setTempo(1);
   loop();
   try {
     await loadRegion(REGIONS[0].id);

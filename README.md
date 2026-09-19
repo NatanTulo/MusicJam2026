@@ -23,14 +23,20 @@ a GEBCO zostawiamy jako ścieżkę rozszerzeń poza Europę.
 
 ```bash
 npm install
-npm run fetch:data   # pobiera świeżą batymetrię Bałtyku z EMODnet ERDDAP (~0,5 MB JSON)
+npm run fetch:data   # świeża batymetria z EMODnet ERDDAP: cały Bałtyk + detal Zatoki Gdańskiej
 npm run dev          # http://127.0.0.1:5173
 npm run build        # build do dist/
 ```
 
+Dwa regiony w grze (przełączane z GUI):
+- **Bałtyk — cały** (401×705 komórek po ~3,5 km, ~1,4 MB) — rejsy przez cały akwen;
+  uwaga: wąskie rynny (np. Landsort) są uśrednione — to mapa przeglądowa.
+- **Zatoka Gdańska — detal** (154×327 po ~575 m) — precyzyjne pływanie, prawdziwy kształt Mierzei Helskiej.
+
 ## Sterowanie
 
 - **W/S** – gaz / wstecz, **A/D** – skręt, mysz – orbita/zoom, **C** – kamera podążająca, **R** – restart
+- **Tempo testowe**: selektor 1–100× w panelu (lub klawisze **1**/**2**/**3** = 1×/10×/100×) — nierealistycznie szybkie rejsy po całym Bałtyku
 - HUD: głębokość pod łódką (m), pozycja lat/lon, prędkość (węzły), kurs, echosonda, minimapa z trasą
 - Mielizna: łódka staje, status „MIELIZNA!”
 

@@ -7,18 +7,18 @@ const ERDDAP = 'https://erddap.emodnet.eu/erddap/griddap/bathymetry_dtm_2024.csv
 
 const REGIONS = [
   {
+    id: 'baltic-full',
+    name: 'Bałtyk — cały',
+    latMin: 53.5, latMax: 66.0,
+    lonMin: 9.0, lonMax: 31.0,
+    stride: 30, // ~401 x 705 komórek (~3,5 km); cały Bałtyk w ~1,5 MB JSON
+  },
+  {
     id: 'baltic-south',
     name: 'Bałtyk Południowy — Zatoka Gdańska',
     latMin: 54.25, latMax: 55.05,
     lonMin: 18.2, lonMax: 19.9,
     stride: 5, // co ~5 komórek ~ 575 m; daje ~154 x 327
-  },
-  {
-    id: 'baltic-overview',
-    name: 'Bałtyk — przegląd (niska rozdzielczość)',
-    latMin: 53.8, latMax: 59.8,
-    lonMin: 10.0, lonMax: 25.0,
-    stride: 45, // ~200 x 320, podgląd + docelowo wybór regionu
   },
 ];
 
