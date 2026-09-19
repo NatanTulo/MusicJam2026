@@ -65,8 +65,11 @@ const state = {
 
 // Publiczne API dostępu do głębokości (wymaganie: "dostęp do głębokości do dna względem łódki")
 window.boatAPI = {
-  getDepth: () => (grid ? grid.depthAt(state.lat, state.lon) : NaN),
-  getElevation: () => (grid ? grid.sampleElevation(state.lat, state.lon) : NaN),
+  getDepth: () => (grid ? physDepthAt(state.lat, state.lon) : NaN),
+  getElevation: () => {
+    const g = grid ? physGrid(state.lat, state.lon) : null;
+    return g ? g.sampleElevation(state.lat, state.lon) : NaN;
+  },
   getPosition: () => ({ lat: state.lat, lon: state.lon }),
   getSpeedKnots: () => Math.abs(state.speed) * MS_TO_KT,
   getHeadingDeg: () => (state.heading * 180 / Math.PI + 360) % 360,
@@ -78,6 +81,7 @@ window.boatAPI = {
     tris: (terrainMesh?.geometry.index?.count ?? 0) / 3,
     tex: terrainMesh?.material.map ? [terrainMesh.material.map.image.width, terrainMesh.material.map.image.height] : null,
     heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null,
+    tile: tileMesh ? `on (${coastTile.nLat}x${coastTile.nLon})` : (tileLoading ? 'loading…' : 'off'),
   }),
   getSpeedScale: () => speedScale,
   setSpeedScale: (s) => setTempo(s),
@@ -254,10 +258,10 @@ function buildTerrain() {
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i);
     const { lat, lon } = grid.worldToLatLon(x, z);
-    // Interpolacja bilinearna zamiast nearest: gładkie zbocza bez tarasów/klocków.
-    // (Przy brzegu sampleElevation i tak wraca do najbliższej komórki.)
-    let e = grid.sampleElevation(lat, lon);
-    if (Number.isNaN(e)) e = 2; // ląd bez danych: lekko nad wodą
+    // Renderowa siatka przybrzeżna: łagodna plaża zamiast klifu/kwadratów.
+    // (Fizyka łódki cały czas używa ostrego sampleElevation.)
+    let e = grid.sampleRenderElevation(lat, lon);
+    if (Number.isNaN(e)) e = 2; // poza mapą: lekko nad wodą
     baseElev[i] = e;
     pos.setY(i, e * VEX);
   }
@@ -293,8 +297,8 @@ function buildTerrain() {
 }
 
 /** Tekstura dna z siatki batymetrii. Canvas: góra = północ (v=1 w PlaneGeometry).
- *  Nadpróbkowanie 2× z interpolacją bilinearną: miękkie przejścia barwne
- *  przy brzegu zamiast twardych kwadratów komórek (1 px = 1 komórka).
+ *  Próbkowanie renderowe (wygładzony pas przybrzeżny) + nadpróbkowanie 2×:
+ *  miękkie przejścia barwne przy brzegu zamiast twardych kwadratów komórek.
  *  Dla siatek >1 mln komórek SS=1 (tekstura i tak ma megapiksele). */
 function makeSeabedTexture() {
   const SS = TEX_SS_OVERRIDE ?? ((grid.nLat * grid.nLon > 1000000) ? 1 : 2); // nadpróbkowanie
@@ -309,7 +313,7 @@ function makeSeabedTexture() {
     const lat = grid.lat1 - (cy / (H - 1)) * (grid.lat1 - grid.lat0);
     for (let cx = 0; cx < W; cx++) {
       const lon = grid.lon0 + (cx / (W - 1)) * (grid.lon1 - grid.lon0);
-      let e = grid.sampleElevation(lat, lon);
+      let e = grid.sampleRenderElevation(lat, lon);
       if (Number.isNaN(e)) e = 2;
       depthColor(e, c);
       const i = (cy * W + cx) * 4;
@@ -341,7 +345,201 @@ function applyVex() {
   for (let i = 0; i < pos.count; i++) pos.setY(i, base[i] * VEX);
   pos.needsUpdate = true;
   terrainMesh.geometry.computeVertexNormals();
+  if (tileMesh) {
+    const tp = tileMesh.geometry.attributes.position;
+    const tb = tileMesh.geometry.userData.baseElev;
+    for (let i = 0; i < tp.count; i++) tp.setY(i, tb[i] * VEX + TILE_LIFT);
+    tp.needsUpdate = true;
+    tileMesh.geometry.computeVertexNormals();
+  }
   updateBorderHeights();
+}
+
+// ---------------------------------------------------------------------------
+// Nakładka hi-res polskiego wybrzeża (kafel stride 2, ~230 m)
+// Baza (580 m – 3,5 km) nie mieści Mierzei Helskiej (~300 m); kafel dokleja
+// detal jako drugi mesh w światowych współrzędnych bazy (+2 m liftu przeciw
+// z-fightingowi). Fizyka w bbox kafla próbkuje kafel, poza nim — bazę.
+// ---------------------------------------------------------------------------
+const TILE_LIFT = 2;    // metry świata ponad teren bazowy (niewidoczne przy VEX)
+const TILE_FEATHER = 3; // komórek blendu krawędzi kafla do bazy (brak szwów/klifów)
+const TILE_SS = 3;      // nadpróbkowanie tekstury kafla (~77 m/texel)
+const TILE_SMOOTH_PASSES = 3; // przebiegi blur pasa przybrzeżnego kafla (szeroka plaża)
+const TILE_LAPLACIAN_PASSES = 2; // wygładzanie geometrii kafla (zaokrąglenie kantów siatki)
+// Bbox kafla musi być cały w bazie (UWAGA: po upgradzie grid.id to
+// 'baltic-full-res', więc nie testujemy id tylko bbox).
+const TILE_BBOX = { latMin: 54.15, latMax: 55.10, lonMin: 17.60, lonMax: 19.95 };
+function baseContainsTile(g) {
+  if (!g) return false;
+  const b = g.bbox;
+  return b.latMin <= TILE_BBOX.latMin && b.latMax >= TILE_BBOX.latMax &&
+    b.lonMin <= TILE_BBOX.lonMin && b.lonMax >= TILE_BBOX.lonMax;
+}
+
+/** Siatka do fizyki/HUD: kafel gdy łódka w jego bbox i nakładka widoczna. */
+function physGrid(lat, lon) {
+  if (tileMesh && coastTile && coastTile.inBounds(lat, lon)) return coastTile;
+  return grid;
+}
+function physDepthAt(lat, lon) {
+  const g = physGrid(lat, lon);
+  return g ? g.depthAt(lat, lon) : NaN;
+}
+function physIsLand(lat, lon) {
+  const g = physGrid(lat, lon);
+  return g ? g.isLand(lat, lon) : false;
+}
+function physInBounds(lat, lon, margin = 0) {
+  return (tileMesh && coastTile && coastTile.inBounds(lat, lon, margin)) ||
+    (grid && grid.inBounds(lat, lon, margin));
+}
+
+/** Wysokość renderowa kafla z featherem do bazy na krawędzi (STAŁY blend,
+ *  żeby overlay nie robił klifu tam gdzie zgrubna baza widzi inaczej). */
+function tileRenderElevation(lat, lon) {
+  const t = coastTile;
+  const { nLat, nLon } = t;
+  const fx = ((lon - t.lon0) / (t.lon1 - t.lon0)) * (nLon - 1);
+  const fy = ((lat - t.lat0) / (t.lat1 - t.lat0)) * (nLat - 1);
+  if (fx < 0 || fy < 0 || fx > nLon - 1 || fy > nLat - 1) return NaN;
+  const x0 = Math.floor(fx), y0 = Math.floor(fy);
+  const x1 = Math.min(x0 + 1, nLon - 1), y1 = Math.min(y0 + 1, nLat - 1);
+  const tx = fx - x0, ty = fy - y0;
+  const rd = t.renderData;
+  const tv = rd[y0 * nLon + x0] * (1 - tx) * (1 - ty) + rd[y0 * nLon + x1] * tx * (1 - ty) +
+    rd[y1 * nLon + x0] * (1 - tx) * ty + rd[y1 * nLon + x1] * tx * ty;
+  const edge = Math.min(fx, fy, (nLon - 1) - fx, (nLat - 1) - fy);
+  if (edge >= TILE_FEATHER || !grid) return tv;
+  let b = grid.sampleRenderElevation(lat, lon);
+  if (Number.isNaN(b)) b = 2;
+  const w = Math.max(0, edge / TILE_FEATHER); // 0 na krawędzi → baza, 1 w środku → kafel
+  return b * (1 - w) + tv * w;
+}
+
+function tileContainsIn(base, t) {
+  return baseContainsTile(base);
+}
+
+function disposeMesh(m) {
+  if (!m) return;
+  scene.remove(m);
+  m.geometry.dispose();
+  m.material.map?.dispose();
+  m.material.dispose();
+}
+
+/** Buduje overlay kafla w ŚWIATOWYCH współrzędnych bazy (inny środek/ skala
+ *  niż siatka kafla — wierzchołki liczone per-vertex przez bazę). */
+function buildTileOverlay() {
+  disposeMesh(tileMesh);
+  tileMesh = null;
+  if (!coastTile || !grid || !tileContainsIn(grid, coastTile)) return;
+  const t = coastTile;
+  const segX = t.nLon - 1, segY = t.nLat - 1;
+  const nx = segX + 1, ny = segY + 1;
+  const positions = new Float32Array(nx * ny * 3);
+  const uvs = new Float32Array(nx * ny * 2);
+  const baseElev = new Float32Array(nx * ny);
+  for (let r = 0; r < ny; r++) {
+    const lat = t.lat0 + ((t.lat1 - t.lat0) * r) / (t.nLat - 1);
+    for (let c = 0; c < nx; c++) {
+      const lon = t.lon0 + ((t.lon1 - t.lon0) * c) / (t.nLon - 1);
+      let e = tileRenderElevation(lat, lon);
+      if (Number.isNaN(e)) e = 2;
+      const { x, z } = grid.latLonToWorld(lat, lon);
+      const i = r * nx + c;
+      positions[i * 3] = x;
+      positions[i * 3 + 1] = e * VEX + TILE_LIFT;
+      positions[i * 3 + 2] = z;
+      uvs[i * 2] = c / (t.nLon - 1);
+      uvs[i * 2 + 1] = r / (t.nLat - 1); // v=0 południe, v=1 północ
+      baseElev[i] = e;
+    }
+  }
+  // Laplacian pasa przybrzeżnego: zaokrągla kanty siatki (232 m) na stromych
+  // zejściach plaży. Płaskie obszary (sąsiedzi równi) same się zerują.
+  for (let pass = 0; pass < TILE_LAPLACIAN_PASSES; pass++) {
+    const src = baseElev.slice();
+    for (let r = 1; r < ny - 1; r++) {
+      for (let c = 1; c < nx - 1; c++) {
+        const i = r * nx + c;
+        const avg = (src[i - 1] + src[i + 1] + src[i - nx] + src[i + nx]) * 0.25;
+        baseElev[i] += (avg - baseElev[i]) * 0.5;
+      }
+    }
+  }
+  for (let i = 0; i < nx * ny; i++) {
+    positions[i * 3 + 1] = baseElev[i] * VEX + TILE_LIFT;
+  }
+  const idx = new Uint32Array(segX * segY * 6);
+  let k = 0;
+  for (let r = 0; r < segY; r++) {
+    for (let c = 0; c < segX; c++) {
+      // a=SW, b=SE, d=NW, e2=NE — ten porządek daje normalne w górę (+Y),
+      // jak w PlaneGeometry (zweryfikowane iloczynem wektorowym).
+      const a = r * nx + c, b = a + 1, d = a + nx, e2 = d + 1;
+      idx[k++] = a; idx[k++] = b; idx[k++] = d;
+      idx[k++] = b; idx[k++] = e2; idx[k++] = d;
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  geo.computeVertexNormals();
+  geo.userData.baseElev = baseElev;
+  const mat = new THREE.MeshLambertMaterial({ map: makeTileTexture() });
+  tileMesh = new THREE.Mesh(geo, mat);
+  tileMesh.frustumCulled = false;
+  scene.add(tileMesh);
+}
+
+function makeTileTexture() {
+  const t = coastTile;
+  const W = t.nLon * TILE_SS, H = t.nLat * TILE_SS;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(W, H);
+  const c = [0, 0, 0];
+  for (let cy = 0; cy < H; cy++) {
+    const lat = t.lat1 - (cy / (H - 1)) * (t.lat1 - t.lat0);
+    for (let cx = 0; cx < W; cx++) {
+      const lon = t.lon0 + (cx / (W - 1)) * (t.lon1 - t.lon0);
+      let e = tileRenderElevation(lat, lon);
+      if (Number.isNaN(e)) e = 2;
+      depthColor(e, c);
+      const i = (cy * W + cx) * 4;
+      img.data[i] = c[0] * 255; img.data[i + 1] = c[1] * 255; img.data[i + 2] = c[2] * 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return tex;
+}
+
+/** Dociąga kafel w tle (po full-res); nakładka bez resetu łódki. */
+async function kickTileUpgrade() {
+  if (tileLoading || coastTile || !baseContainsTile(grid)) return;
+  tileLoading = true;
+  try {
+    const t = await BathymetryGrid.load('baltic-polish-coast');
+    t.buildRenderData(TILE_SMOOTH_PASSES); // szersza plaża niż w bazie
+    coastTile = t;
+    if (!baseContainsTile(grid)) return; // użytkownik zmienił region
+    buildTileOverlay();
+    if (tileMesh) toast('Detal wybrzeża gotowy (~230 m) — Mierzeja Helska wyraźniejsza');
+  } catch (err) {
+    console.warn('Kafel wybrzeża niedostępny, zostaje baza:', err.message);
+  } finally {
+    tileLoading = false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -510,12 +708,12 @@ function animateWater(t) {
 // Logika łódki (WASD)
 // ---------------------------------------------------------------------------
 function findSeaNear(lat, lon) {
-  if (!grid.isLand(lat, lon) && grid.depthAt(lat, lon) > 4) return { lat, lon };
+  if (!physIsLand(lat, lon) && physDepthAt(lat, lon) > 4) return { lat, lon };
   for (let r = 0.005; r < 0.5; r += 0.005) {
     for (let a = 0; a < 12; a++) {
       const la = lat + Math.sin((a / 12) * Math.PI * 2) * r;
       const lo = lon + Math.cos((a / 12) * Math.PI * 2) * r;
-      if (grid.inBounds(la, lo) && !grid.isLand(la, lo) && grid.depthAt(la, lo) > 4)
+      if (physInBounds(la, lo) && !physIsLand(la, lo) && physDepthAt(la, lo) > 4)
         return { lat: la, lon: lo };
     }
   }
@@ -568,16 +766,16 @@ function updateBoat(dt, t) {
     // dz (metry, ujemne = północ); dlat = -dz / mPerDegLat; dlon = dx / mPerDegLon
     const nLat = state.lat + (-(fz * state.speed * sdt)) / mPerDegLat;
     const nLon = state.lon + (fx * state.speed * sdt) / mPerDegLon;
-    if (!grid.inBounds(nLat, nLon, 0.002)) {
+    if (!physInBounds(nLat, nLon, 0.002)) {
       outOfMap = true;
       state.speed *= 0.9;
       break;
-    } else if (grid.isLand(nLat, nLon)) {
+    } else if (physIsLand(nLat, nLon)) {
       // spróbuj ślizgu wzdłuż przeszkody: sam X albo sam Z
       const onlyLat = state.lat + (-(fz * state.speed * sdt)) / mPerDegLat;
       const onlyLon = state.lon + (fx * state.speed * sdt) / mPerDegLon;
-      if (!grid.isLand(onlyLat, state.lon)) { state.lat = onlyLat; }
-      else if (!grid.isLand(state.lat, onlyLon)) { state.lon = onlyLon; }
+      if (!physIsLand(onlyLat, state.lon)) { state.lat = onlyLat; }
+      else if (!physIsLand(state.lat, onlyLon)) { state.lon = onlyLon; }
       aground = true;
       state.speed *= 0.5;
       if (Math.abs(state.speed) < 0.4) state.speed = 0;
@@ -648,7 +846,7 @@ function fmtLon(lon) { return `${Math.abs(lon).toFixed(4)}°${lon >= 0 ? 'E' : '
 function updateHud(t) {
   if (t - lastHud < 0.1) return;
   lastHud = t;
-  const depth = grid ? grid.depthAt(state.lat, state.lon) : NaN;
+  const depth = grid ? physDepthAt(state.lat, state.lon) : NaN;
   const kn = Math.abs(state.speed) * MS_TO_KT;
   const hdg = (state.heading * 180 / Math.PI + 360) % 360;
 
@@ -817,9 +1015,13 @@ function drawMini() {
 // bez resetowania łódki ani kamery. Kształty przy oddaleniu pilnują mipmapy.
 let fullGrid = null;   // zdekodowany PNG (cache na sesję)
 let upgradeToken = 0;
+let coastTile = null;  // hi-res kafel polskiego wybrzeża (stride 2, ~230 m), cache na sesję
+let tileMesh = null;   // overlay mesh kafla (null = brak nakładki dla tego regionu)
+let tileLoading = false;
 
 function refreshMeshes() {
   buildTerrain();
+  buildTileOverlay(); // nakładka hi-res, jeśli baza ją zawiera (tylko Bałtyk — cały)
   try {
     buildBorders();
   } catch (err) {
@@ -844,6 +1046,7 @@ async function loadRegion(id) {
   toast(`Załadowano: ${reg.name} — min. głębokość ${Math.abs(grid.stats.min).toFixed(0)} m`);
   document.title = `Batymetry Boat — ${reg.name}`;
   if (id === 'baltic-full' && !fullGrid) kickFullResUpgrade();
+  else if (id === 'baltic-full' && !coastTile) kickTileUpgrade(); // powrót do regionu: baza z cache
 }
 
 /** Dociąga pełną rozdzielczość w tle i podmienia siatkę w locie (bez resetu). */
@@ -857,8 +1060,10 @@ async function kickFullResUpgrade() {
     grid = fullGrid;
     refreshMeshes();
     toast('Pełna rozdzielczość gotowa — brzegi i rynny dokładniejsze');
+    kickTileUpgrade(); // dalej: detal wybrzeża (~230 m) jako nakładka
   } catch (err) {
     console.warn('Upgrade pełnej rozdzielczości nieudany, zostaje siatka zgrubna:', err.message);
+    kickTileUpgrade(); // kafel doklei się i na zgrubną bazę
   }
 }
 

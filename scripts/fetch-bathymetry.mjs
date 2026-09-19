@@ -28,6 +28,13 @@ const REGIONS = [
     lonMin: 18.2, lonMax: 19.9,
     stride: 5, // co ~5 komórek ~ 575 m; daje ~154 x 327
   },
+  {
+    id: 'baltic-polish-coast',
+    name: 'Polskie wybrzeże — kafel hi-res (nakładka)',
+    latMin: 54.15, latMax: 55.10,
+    lonMin: 17.60, lonMax: 19.95,
+    stride: 2, // ~230 m; ~456 x 1128 komórek — Mierzeja Helska (~300 m) mieści się w komórce
+  },
 ];
 
 async function fetchRegion(r) {

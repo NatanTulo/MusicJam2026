@@ -31,6 +31,7 @@ export class BathymetryGrid {
       this.data[i] = v === null || v === undefined ? NaN : v;
     }
     this.fillEnclosedNulls();
+    this.buildRenderData();
   }
 
   /** Małe dziury null w pełnym morzu (brak sondowań EMODnet) zalewa morzem.
@@ -100,6 +101,89 @@ export class BathymetryGrid {
     this.stats = { ...(this.stats || {}), min, max, seaCells: sea, landCells: N - sea };
   }
 
+  /** Wersja renderowa siatki: ląd (NaN) zawsze +2 m, a komórki MORZA
+   *  stykające się z lądem dostają średnią 3×3 (płycizna/plaża).
+   *  Komórek lądu nie ruszamy — inaczej wąskie mierzeje (Helska, ~1 komórka)
+   *  renderowałyby się jako woda, a fizyka (ostre `data`) i tak by blokowała
+   *  łódkę, tworząc niewidzialne ściany. Pełne morze i środek lądu nietknięte.
+   *  `passes` (domyślnie 1) poszerza plażę: każdy przebieg rozlewa wygładzenie
+   *  o kolejną komórkę w głąb morza (aproksymacja Gaussa, ping-pong buforów).
+   *  Fizyka (sampleElevation/depthAt/isLand) cały czas używa surowego `data`. */
+  buildRenderData(passes = 1) {
+    const { nLat, nLon, data } = this;
+    const N = nLat * nLon;
+    const filled = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const v = data[i];
+      filled[i] = Number.isNaN(v) ? 2 : v;
+    }
+    let src = filled;
+    let dst = new Float32Array(N);
+    for (let p = 0; p < Math.max(1, passes); p++) {
+      dst.set(src);
+      for (let r = 0; r < nLat; r++) {
+        for (let c = 0; c < nLon; c++) {
+          const i = r * nLon + c;
+          if (Number.isNaN(data[i])) continue; // ląd zostaje +2
+          let coastal = false;
+          for (let dr = -1; dr <= 1 && !coastal; dr++) {
+            for (let dc = -1; dc <= 1; dc++) {
+              if (!dr && !dc) continue;
+              const rr = r + dr, cc = c + dc;
+              if (rr < 0 || cc < 0 || rr >= nLat || cc >= nLon) continue;
+              if (Number.isNaN(data[rr * nLon + cc])) { coastal = true; break; }
+            }
+          }
+          if (!coastal && p === 0) continue;
+          // W kolejnych przebiegach wygładzaj też już-wygładzone sąsiedztwo
+          // (fala relaksacji), żeby plaża się poszerzała, nie tylko pogłębiała.
+          if (!coastal && p > 0) {
+            let touched = false;
+            for (let dr = -2; dr <= 2 && !touched; dr++) {
+              for (let dc = -2; dc <= 2; dc++) {
+                if (!dr && !dc) continue;
+                const rr = r + dr, cc = c + dc;
+                if (rr < 0 || cc < 0 || rr >= nLat || cc >= nLon) continue;
+                if (src[rr * nLon + cc] !== filled[rr * nLon + cc]) { touched = true; break; }
+              }
+            }
+            if (!touched) continue;
+          }
+          let s = 0, k = 0;
+          for (let dr = -1; dr <= 1; dr++) {
+            for (let dc = -1; dc <= 1; dc++) {
+              const rr = r + dr, cc = c + dc;
+              if (rr < 0 || cc < 0 || rr >= nLat || cc >= nLon) continue;
+              s += src[rr * nLon + cc]; k++;
+            }
+          }
+          dst[i] = s / k;
+        }
+      }
+      const tmp = src; src = dst; dst = tmp === filled ? new Float32Array(N) : tmp;
+    }
+    this.renderData = src === filled ? filled.slice() : src;
+  }
+
+  /** Wysokość do renderu (geometria + tekstura): bilinear po wygładzonej
+   *  siatce przybrzeżnej. Nigdy nie zwraca NaN wewnątrz mapy (ląd = +2 m
+   *  z łagodnym zejściem). Poza mapą NaN. */
+  sampleRenderElevation(lat, lon) {
+    const { nLat, nLon } = this;
+    const fx = ((lon - this.lon0) / (this.lon1 - this.lon0)) * (nLon - 1);
+    const fy = ((lat - this.lat0) / (this.lat1 - this.lat0)) * (nLat - 1);
+    if (fx < 0 || fy < 0 || fx > nLon - 1 || fy > nLat - 1) return NaN;
+    const x0 = Math.floor(fx), y0 = Math.floor(fy);
+    const x1 = Math.min(x0 + 1, nLon - 1), y1 = Math.min(y0 + 1, nLat - 1);
+    const tx = fx - x0, ty = fy - y0;
+    const rd = this.renderData;
+    const a = rd[y0 * nLon + x0];
+    const b = rd[y0 * nLon + x1];
+    const c = rd[y1 * nLon + x0];
+    const d = rd[y1 * nLon + x1];
+    return a * (1 - tx) * (1 - ty) + b * tx * (1 - ty) + c * (1 - tx) * ty + d * tx * ty;
+  }
+
   static async load(id) {
     const res = await fetch(`./data/${id}.json`);
     if (!res.ok) throw new Error(`Nie znaleziono danych regionu ${id}`);
@@ -111,6 +195,7 @@ export class BathymetryGrid {
     const g = new BathymetryGrid({ ...meta, elevation: [] });
     g.data.set(data);
     g.fillEnclosedNulls();
+    g.buildRenderData();
     return g;
   }
 
