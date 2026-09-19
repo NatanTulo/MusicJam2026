@@ -29,8 +29,11 @@ npm run build        # build do dist/
 ```
 
 Dwa regiony w grze (przełączane z GUI):
-- **Bałtyk — cały** (401×705 komórek po ~3,5 km, ~1,4 MB) — rejsy przez cały akwen;
-  uwaga: wąskie rynny (np. Landsort) są uśrednione — to mapa przeglądowa.
+- **Bałtyk — cały** (401×705 komórek po ~3,5 km, ~1,4 MB) — start natychmiastowy;
+  w tle dociąga się **pełna rozdzielczość** (2401×4225 po ~580×340 m, PNG 3,5 MB)
+  i podmienia siatkę bez resetowania łódki (`npm run fetch:fullres` regeneruje PNG
+  z EMODnet; obszar Zatoki doklejany jest z siatki detalicznej, żeby faza
+  próbkowania nie urywała Mierzei Helskiej).
 - **Zatoka Gdańska — detal** (154×327 po ~575 m) — precyzyjne pływanie, prawdziwy kształt Mierzei Helskiej.
 
 ## Sterowanie

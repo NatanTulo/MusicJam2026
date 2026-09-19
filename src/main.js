@@ -9,6 +9,11 @@ const REGIONS = [
   { id: 'baltic-full', name: 'Bałtyk — cały (EMODnet)', start: { lat: 54.52, lon: 18.95 } },
   { id: 'baltic-south', name: 'Bałtyk Południowy — Zatoka Gdańska (detal)', start: { lat: 54.52, lon: 18.95 } },
 ];
+// Eksperymentalne nadpisanie gęstości siatki 3D/tekstury, np. ?meshstep=1&texss=2
+// wymusza wierność detalu Zatoki na całej mapie (potrzebne do pomiaru kosztów).
+const QRY = new URLSearchParams(location.search);
+const MESH_STEP_OVERRIDE = parseInt(QRY.get('meshstep') || '', 10) || null;
+const TEX_SS_OVERRIDE = parseInt(QRY.get('texss') || '', 10) || null;
 let VEX = 20; // przewyższenie pionowe dna (wizualizacja)
 let speedScale = 1; // tempo testowe: mnożnik prędkości (1 = realistycznie)
 const MS_TO_KT = 1.94384;
@@ -66,6 +71,14 @@ window.boatAPI = {
   getSpeedKnots: () => Math.abs(state.speed) * MS_TO_KT,
   getHeadingDeg: () => (state.heading * 180 / Math.PI + 360) % 360,
   getRegion: () => grid?.id,
+  getDetail: () => (grid === fullGrid ? 'full' : 'coarse'),
+  // Diagnostyka wydajności (eksperymenty z gęstością siatki).
+  _stats: () => ({
+    verts: terrainMesh?.geometry.attributes.position.count ?? 0,
+    tris: (terrainMesh?.geometry.index?.count ?? 0) / 3,
+    tex: terrainMesh?.material.map ? [terrainMesh.material.map.image.width, terrainMesh.material.map.image.height] : null,
+    heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null,
+  }),
   getSpeedScale: () => speedScale,
   setSpeedScale: (s) => setTempo(s),
   // Hak testowy: deterministyczny krok fizyki + render, gdy rAF jest zdławiony
@@ -212,7 +225,13 @@ function buildTerrain() {
   if (waterMesh) { scene.remove(waterMesh); waterMesh.geometry.dispose(); }
 
   const { nLat, nLon, widthM, depthM } = grid;
-  const geo = new THREE.PlaneGeometry(widthM, depthM, nLon - 1, nLat - 1);
+  // Decymacja geometrii dla gęstych siatek (cel ~1 mln czworokątów): rzeźba 3D
+  // musi nadążać za teksturą, inaczej przy VEX 20× krawędź klifu mija się
+  // z linią brzegu z kolorów o ±2 km ("poucinany" ląd). Fizyka i tak próbkuje
+  // pełną siatkę (bilinear).
+  const step = MESH_STEP_OVERRIDE ?? Math.max(1, Math.round(Math.sqrt((nLat * nLon) / 1000000)));
+  const segX = Math.floor((nLon - 1) / step), segY = Math.floor((nLat - 1) / step);
+  const geo = new THREE.PlaneGeometry(widthM, depthM, segX, segY);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;
   const baseElev = new Float32Array(pos.count);
@@ -220,7 +239,9 @@ function buildTerrain() {
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i);
     const { lat, lon } = grid.worldToLatLon(x, z);
-    let e = grid.sampleNearest(lat, lon);
+    // Interpolacja bilinearna zamiast nearest: gładkie zbocza bez tarasów/klocków.
+    // (Przy brzegu sampleElevation i tak wraca do najbliższej komórki.)
+    let e = grid.sampleElevation(lat, lon);
     if (Number.isNaN(e)) e = 2; // ląd bez danych: lekko nad wodą
     baseElev[i] = e;
     pos.setY(i, e * VEX);
@@ -251,21 +272,27 @@ function buildTerrain() {
   applyWaterXray();
 }
 
-/** Tekstura dna z siatki batymetrii. Canvas: góra = północ (v=1 w PlaneGeometry). */
+/** Tekstura dna z siatki batymetrii. Canvas: góra = północ (v=1 w PlaneGeometry).
+ *  Nadpróbkowanie 2× z interpolacją bilinearną: miękkie przejścia barwne
+ *  przy brzegu zamiast twardych kwadratów komórek (1 px = 1 komórka).
+ *  Dla siatek >1 mln komórek SS=1 (tekstura i tak ma megapiksele). */
 function makeSeabedTexture() {
-  const { nLat, nLon } = grid;
+  const SS = TEX_SS_OVERRIDE ?? ((grid.nLat * grid.nLon > 1000000) ? 1 : 2); // nadpróbkowanie
+  const W = grid.nLon * SS, H = grid.nLat * SS;
   const cv = document.createElement('canvas');
-  cv.width = nLon; cv.height = nLat;
+  cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d');
-  const img = ctx.createImageData(nLon, nLat);
+  const img = ctx.createImageData(W, H);
   const c = [0, 0, 0];
-  for (let r = 0; r < nLat; r++) {
-    for (let col = 0; col < nLon; col++) {
-      let e = grid.data[r * nLon + col];
+  for (let cy = 0; cy < H; cy++) {
+    // wiersz canvasu 0 (góra) = północ = lat1
+    const lat = grid.lat1 - (cy / (H - 1)) * (grid.lat1 - grid.lat0);
+    for (let cx = 0; cx < W; cx++) {
+      const lon = grid.lon0 + (cx / (W - 1)) * (grid.lon1 - grid.lon0);
+      let e = grid.sampleElevation(lat, lon);
       if (Number.isNaN(e)) e = 2;
       depthColor(e, c);
-      const y = nLat - 1 - r; // wiersz 0 (południe) na dół canvasu
-      const i = (y * nLon + col) * 4;
+      const i = (cy * W + cx) * 4;
       img.data[i] = c[0] * 255; img.data[i + 1] = c[1] * 255; img.data[i + 2] = c[2] * 255;
       img.data[i + 3] = 255;
     }
@@ -371,21 +398,26 @@ function buildBorders() {
   const mat = new THREE.LineBasicMaterial({ color: 0x4a1f18, transparent: true, opacity: 0.9 });
   for (const ring of borderData.borders) {
     // Dziel na ciągi wewnątrz siatki, żeby linie nie przecinały pustki poza terenem.
-    let run = [];
+    // Rysuj tylko odcinki lądowe: zgrubne linie brzegowe tinyworldmap mijają się
+    // z dokładną batymetrią EMODnet i z bliska "cięłyby" przez wodę.
+    // (THREE.Vector3 nie ma userData — lat/lon trzymamy w równoległej tablicy.)
+    let run = [], runLL = [];
     const flush = () => {
       if (run.length >= 2) {
         const g = new THREE.BufferGeometry().setFromPoints(run);
-        borderGroup.add(new THREE.Line(g, mat));
-        borderVerts.push({ line: borderGroup.children[borderGroup.children.length - 1], pts: run.map((p) => p.userData.ll) });
+        const line = new THREE.Line(g, mat);
+        borderGroup.add(line);
+        borderVerts.push({ line, pts: runLL });
       }
-      run = [];
+      run = []; runLL = [];
     };
     for (const [lat, lon] of ring) {
       if (!inGridBounds(lat, lon, 0.15)) { flush(); continue; }
+      const e = grid.sampleNearest(lat, lon);
+      if (!Number.isNaN(e) && e < -1.5) { flush(); continue; } // woda — pomiń
       const { x, z } = grid.latLonToWorld(lat, lon);
-      const v = new THREE.Vector3(x, borderGroundY(lat, lon) + BORDER_LIFT(), z);
-      v.userData.ll = [lat, lon];
-      run.push(v);
+      run.push(new THREE.Vector3(x, borderGroundY(lat, lon) + BORDER_LIFT(), z));
+      runLL.push([lat, lon]);
     }
     flush();
   }
@@ -421,12 +453,13 @@ function updateBorderHeights() {
   }
 }
 
-/** Stały rozmiar ekranowy etykiet (jak marker łódki): skala ~ odległość kamery. */
+/** Stały rozmiar ekranowy etykiet: skala ~ odległość kamery od danej etykiety
+ *  (nie od łódki — inaczej przelot obok etykiety robi gigantyczną plamę). */
 function updateLabelScales() {
-  if (!labelSprites.length || !boat) return;
-  const d = camera.position.distanceTo(boat.position);
+  if (!labelSprites.length) return;
   for (const { sprite } of labelSprites) {
-    const w = d * 0.13;
+    const d = camera.position.distanceTo(sprite.position);
+    const w = Math.max(d * 0.13, 1);
     sprite.scale.set(w, w / 4, 1);
   }
 }
@@ -747,16 +780,32 @@ function drawMini() {
 }
 
 // ---------------------------------------------------------------------------
-// Ładowanie regionu
+// Ładowanie regionu (+ leniwy upgrade do pełnej rozdzielczości)
 // ---------------------------------------------------------------------------
+// Start jest natychmiastowy na zgrubnej siatce (~3,5 km, 1,4 MB); pełna
+// rozdzielczość (~580 m, PNG 3,5 MB) dociąga się w tle i podmienia siatkę
+// bez resetowania łódki ani kamery. Kształty przy oddaleniu pilnują mipmapy.
+let fullGrid = null;   // zdekodowany PNG (cache na sesję)
+let upgradeToken = 0;
+
+function refreshMeshes() {
+  buildTerrain();
+  try {
+    buildBorders();
+  } catch (err) {
+    // Granice to warstwa niekrytyczna — nie blokuj gry, gdy coś pójdzie nie tak.
+    console.warn('Nie udało się zbudować granic państw:', err);
+  }
+  renderMiniBase();
+}
+
 async function loadRegion(id) {
   hud.loading.style.display = 'flex';
   const reg = REGIONS.find((r) => r.id === id);
   hud.loadingText.textContent = `Pobieranie batymetrii: ${reg.name}…`;
-  grid = await BathymetryGrid.load(id);
-  buildTerrain();
-  buildBorders();
-  renderMiniBase();
+  if (id === 'baltic-full' && fullGrid) grid = fullGrid;
+  else grid = await BathymetryGrid.load(id);
+  refreshMeshes();
   resetBoatToStart(reg.start.lat, reg.start.lon);
   const { x, z } = grid.latLonToWorld(state.lat, state.lon);
   controls.target.set(x, 0, z);
@@ -764,6 +813,23 @@ async function loadRegion(id) {
   hud.loading.style.display = 'none';
   toast(`Załadowano: ${reg.name} — min. głębokość ${Math.abs(grid.stats.min).toFixed(0)} m`);
   document.title = `Batymetry Boat — ${reg.name}`;
+  if (id === 'baltic-full' && !fullGrid) kickFullResUpgrade();
+}
+
+/** Dociąga pełną rozdzielczość w tle i podmienia siatkę w locie (bez resetu). */
+async function kickFullResUpgrade() {
+  const my = ++upgradeToken;
+  toast('Dociąganie pełnej rozdzielczości dna (~580 m)…');
+  try {
+    const g = await BathymetryGrid.loadResPNG();
+    fullGrid = g;
+    if (my !== upgradeToken || grid.id !== 'baltic-full') return; // użytkownik zmienił region
+    grid = fullGrid;
+    refreshMeshes();
+    toast('Pełna rozdzielczość gotowa — brzegi i rynny dokładniejsze');
+  } catch (err) {
+    console.warn('Upgrade pełnej rozdzielczości nieudany, zostaje siatka zgrubna:', err.message);
+  }
 }
 
 /** Ustawia tempo testowe (mnożnik prędkości). Zwraca znormalizowaną wartość. */

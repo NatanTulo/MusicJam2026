@@ -14,6 +14,14 @@ const REGIONS = [
     stride: 30, // ~401 x 705 komórek (~3,5 km); cały Bałtyk w ~1,5 MB JSON
   },
   {
+    id: 'baltic-full-hd',
+    name: 'Bałtyk — cały (gęsty)',
+    latMin: 53.5, latMax: 66.0,
+    lonMin: 9.0, lonMax: 31.0,
+    stride: 10, // ~1201 x 2113 komórek (~1,2 x 0,6 km); ~11 MB JSON
+    round: 1, // przy tej gęstości 1 m precyzji wystarczy i odchudza plik
+  },
+  {
     id: 'baltic-south',
     name: 'Bałtyk Południowy — Zatoka Gdańska',
     latMin: 54.25, latMax: 55.05,
@@ -35,16 +43,13 @@ async function fetchRegion(r) {
   console.log(`  wierszy CSV: ${lines.length}`);
   if (lines.length < 5) throw new Error('pusta odpowiedź: ' + text.slice(0, 300));
 
-  // CSV: linia 0 nagłówek, linia 1 jednostki, dalej dane lat,lon,elev
+  // CSV: linia 0 nagłówek, linia 1 jednostki, dalej dane lat,lon,elev.
+  // Dwa przebiegi bez trzymania wierszy w pamięci (region HD to ~2,5 mln wierszy).
   const lats = new Set(); const lons = new Set();
-  const rows = [];
   for (let i = 2; i < lines.length; i++) {
-    const [la, lo, el] = lines[i].split(',');
-    const lat = parseFloat(la), lon = parseFloat(lo);
-    let elev = parseFloat(el);
-    if (Number.isNaN(elev) || el.trim() === 'NaN' || el.trim() === '') elev = NaN;
-    lats.add(lat); lons.add(lon);
-    rows.push([lat, lon, elev]);
+    const c1 = lines[i].indexOf(','), c2 = lines[i].indexOf(',', c1 + 1);
+    lats.add(parseFloat(lines[i].slice(0, c1)));
+    lons.add(parseFloat(lines[i].slice(c1 + 1, c2)));
   }
   const latArr = [...lats].sort((a, b) => a - b);
   const lonArr = [...lons].sort((a, b) => a - b);
@@ -55,10 +60,17 @@ async function fetchRegion(r) {
   const latIdx = new Map(latArr.map((v, i) => [v.toFixed(9), i]));
   const lonIdx = new Map(lonArr.map((v, i) => [v.toFixed(9), i]));
   const grid = new Array(nLat * nLon).fill(NaN);
+  const prec = r.round ?? 0.1;
   let min = Infinity, max = -Infinity, seaCount = 0, landCount = 0;
-  for (const [lat, lon, elev] of rows) {
-    const li = latIdx.get(lat.toFixed(9)), lo = lonIdx.get(lon.toFixed(9));
-    const v = Number.isNaN(elev) ? NaN : Math.round(elev * 10) / 10;
+  for (let i = 2; i < lines.length; i++) {
+    const line = lines[i];
+    const c1 = line.indexOf(','), c2 = line.indexOf(',', c1 + 1);
+    const li = latIdx.get(parseFloat(line.slice(0, c1)).toFixed(9));
+    const lo = lonIdx.get(parseFloat(line.slice(c1 + 1, c2)).toFixed(9));
+    const elStr = line.slice(c2 + 1).trim();
+    let v = parseFloat(elStr);
+    if (Number.isNaN(v) || elStr === 'NaN' || elStr === '') v = NaN;
+    else v = Math.round(v / prec) * prec;
     grid[li * nLon + lo] = v;
     if (!Number.isNaN(v)) {
       seaCount++;
@@ -87,8 +99,11 @@ async function fetchRegion(r) {
   return out;
 }
 
+// Użycie: node scripts/fetch-bathymetry.mjs [id...] — bez argumentów pobiera wszystko.
+const wanted = new Set(process.argv.slice(2));
 const results = [];
 for (const r of REGIONS) {
+  if (wanted.size && !wanted.has(r.id)) continue;
   try { results.push(await fetchRegion(r)); }
   catch (e) { console.error('BŁĄD', r.id, e.message); process.exitCode = 1; }
 }
