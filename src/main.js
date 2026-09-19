@@ -31,7 +31,7 @@ const hud = {
 let renderer, scene, camera, controls, clock;
 let grid = null;
 let terrainMesh = null, waterMesh = null, waterBase = null;
-let boat = null;
+let boat = null, boatWake = null;
 let boatMarker = null;
 let trailLine = null;
 const trailPts = [];       // THREE.Vector3 (world)
@@ -98,7 +98,7 @@ function initScene() {
 
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87b5d6);
-  scene.fog = new THREE.Fog(0x87b5d6, 25000, 160000);
+  // Mgła usunięta — rozmywała horyzont i ukrywała taflę wody.
 
   camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 2, 5000000);
   camera.position.set(0, 90, 220);
@@ -108,7 +108,9 @@ function initScene() {
   controls.dampingFactor = 0.08;
   controls.minDistance = 15;
   controls.maxDistance = 1500000; // da się oddalić na cały Bałtyk (~1300 km)
-  controls.maxPolarAngle = Math.PI * 0.495;
+  // Nie schodź do poziomu tafli: przy widoku w pełni horyzontalnym płaszczyzna
+  // wody jest prawie niewidoczna (na sztorc) i łódka wygląda jakby latała.
+  controls.maxPolarAngle = Math.PI * 0.465;
 
   scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x1a3a52, 0.95));
   const sun = new THREE.DirectionalLight(0xfff2dd, 1.6);
@@ -117,6 +119,19 @@ function initScene() {
 
   boat = buildBoat();
   scene.add(boat);
+
+  // Piana / cień pod łódką: jasna elipsa na tafli, kotwiczy łódkę wizualnie do wody.
+  // Celowo duża i wyraźna, żeby kontakt z wodą było widać też z daleka.
+  boatWake = new THREE.Mesh(
+    new THREE.CircleGeometry(16, 40),
+    new THREE.MeshBasicMaterial({
+      color: 0xeaf7ff, transparent: true, opacity: 0.45,
+      depthWrite: false, side: THREE.DoubleSide,
+    }),
+  );
+  boatWake.rotation.x = -Math.PI / 2;
+  boatWake.renderOrder = 3;
+  scene.add(boatWake);
 
   // Marker łódki: z daleka łódka jest podpikselowa, więc pokazujemy pinezkę
   // o stałym rozmiarze ekranowym (znika z bliska, gdy widać model).
@@ -234,12 +249,17 @@ function buildTerrain() {
   terrainMesh = new THREE.Mesh(geo, mat);
   scene.add(terrainMesh);
 
-  // Woda: przezroczysta tafla na y=0 z animowanymi falami (niski segment).
-  const wgeo = new THREE.PlaneGeometry(widthM, depthM, 72, 72);
+  // Woda: widoczna tafla na y=0 z animowanymi falami.
+  // Celowo wyraźna (kryjąca), żeby łódka stała NA wodzie, a nie "latała w powietrzu"
+  // nad widocznym dnem. Tryb X-ray tylko rozjaśnia, ale nie znika.
+  const wgeo = new THREE.PlaneGeometry(widthM, depthM, 110, 110);
   wgeo.rotateX(-Math.PI / 2);
   const wmat = new THREE.MeshPhongMaterial({
-    color: 0x1b6f8f, transparent: true, opacity: 0.62,
-    shininess: 140, specular: 0x99ddff, side: THREE.FrontSide,
+    color: 0x16617f, transparent: true, opacity: 0.45,
+    shininess: 180, specular: 0xcfeeff, side: THREE.DoubleSide,
+    // depthWrite: false — dno pod wodą rysuje się ostro (bez mleka),
+    // a tafla tylko przyciemnia + daje refleks słońca.
+    depthWrite: false,
     // Odsuń wodę minimalnie od dna w buforze głębi — brak migotania na płyciznach.
     polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
   });
@@ -282,7 +302,9 @@ function makeSeabedTexture() {
 
 function applyWaterXray() {
   if (!waterMesh) return;
-  waterMesh.material.opacity = hud.waterXray.checked ? 0.30 : 0.62;
+  // X-ray: dno ostro prześwituje (0.45), ale tafla zostaje czytelna przez
+  // refleks + pianę pod łódką. Bez X-ray tafla prawie kryjąca (0.9).
+  waterMesh.material.opacity = hud.waterXray.checked ? 0.45 : 0.9;
 }
 
 function applyVex() {
@@ -372,20 +394,21 @@ function buildBorders() {
   for (const ring of borderData.borders) {
     // Dziel na ciągi wewnątrz siatki, żeby linie nie przecinały pustki poza terenem.
     let run = [];
+    let runLL = [];
     const flush = () => {
       if (run.length >= 2) {
         const g = new THREE.BufferGeometry().setFromPoints(run);
         borderGroup.add(new THREE.Line(g, mat));
-        borderVerts.push({ line: borderGroup.children[borderGroup.children.length - 1], pts: run.map((p) => p.userData.ll) });
+        borderVerts.push({ line: borderGroup.children[borderGroup.children.length - 1], pts: runLL.slice() });
       }
       run = [];
+      runLL = [];
     };
     for (const [lat, lon] of ring) {
       if (!inGridBounds(lat, lon, 0.15)) { flush(); continue; }
       const { x, z } = grid.latLonToWorld(lat, lon);
-      const v = new THREE.Vector3(x, borderGroundY(lat, lon) + BORDER_LIFT(), z);
-      v.userData.ll = [lat, lon];
-      run.push(v);
+      run.push(new THREE.Vector3(x, borderGroundY(lat, lon) + BORDER_LIFT(), z));
+      runLL.push([lat, lon]);
     }
     flush();
   }
@@ -540,6 +563,14 @@ function updateBoat(dt, t) {
   boat.rotation.z = Math.sin(t * 1.1) * 0.03 - rudder * Math.min(1, Math.abs(state.speed) / 10) * 0.06;
   boat.rotation.x = Math.sin(t * 0.9 + 1) * 0.02 + state.throttle * 0.015;
 
+  // Piana pod łódką podąża za nią i kładzie się na tafli (dowód, że łódka jest na wodzie).
+  if (boatWake) {
+    boatWake.position.set(x, y + 0.25, z);
+    const stretch = 1 + Math.min(1.2, Math.abs(state.speed) / 16);
+    boatWake.scale.set(1, stretch, 1);
+    boatWake.rotation.z = state.heading;
+  }
+
   // Marker: stały rozmiar na ekranie, tylko gdy kamera daleko.
   const camDist = camera.position.distanceTo(boat.position);
   const showMarker = camDist > 900;
@@ -550,10 +581,10 @@ function updateBoat(dt, t) {
     boatMarker.scale.set(s, s, 1);
   }
 
-  // Ślad
+  // Ślad — tuż nad taflą wody, żeby nie wyglądał jak smuga w powietrzu
   if (t - lastTrailPush > 0.4 && Math.abs(state.speed) > 0.5) {
     lastTrailPush = t;
-    trailPts.push(new THREE.Vector3(x, 1.2, z));
+    trailPts.push(new THREE.Vector3(x, y + 0.5, z));
     trailGeoPts.push({ lat: state.lat, lon: state.lon });
     if (trailPts.length > 2000) { trailPts.shift(); trailGeoPts.shift(); }
     const attr = trailLine.geometry.attributes.position;
@@ -768,7 +799,7 @@ async function loadRegion(id) {
 
 /** Ustawia tempo testowe (mnożnik prędkości). Zwraca znormalizowaną wartość. */
 function setTempo(s) {
-  const allowed = [1, 2, 5, 10, 25, 50, 100, 500];
+  const allowed = [1, 100, 500, 1000, 5000];
   speedScale = allowed.includes(Number(s)) ? Number(s) : 1;
   if (hud.tempo) hud.tempo.value = String(speedScale);
   if (hud.tempoBadge) {
@@ -801,11 +832,12 @@ function bindInput() {
       resetBoatToStart(reg.start.lat, reg.start.lon);
       toast('Wrócono na pozycję startową');
     }
-    // Szybkie tempa testowe: 1 = realistycznie, 2 = 10×, 3 = 100×, 4 = 500×
+    // Szybkie tempa testowe: 1 = realistycznie, 2 = 100×, 3 = 500×, 4 = 1000×, 5 = 5000×
     if (e.code === 'Digit1') { setTempo(1); toast('Tempo realistyczne (1×)'); }
-    if (e.code === 'Digit2') { setTempo(10); toast('Tempo testowe 10×'); }
-    if (e.code === 'Digit3') { setTempo(100); toast('Tempo testowe 100×'); }
-    if (e.code === 'Digit4') { setTempo(500); toast('Tempo testowe 500× — odrzutowiec'); }
+    if (e.code === 'Digit2') { setTempo(100); toast('Tempo testowe 100×'); }
+    if (e.code === 'Digit3') { setTempo(500); toast('Tempo testowe 500×'); }
+    if (e.code === 'Digit4') { setTempo(1000); toast('Tempo testowe 1000×'); }
+    if (e.code === 'Digit5') { setTempo(5000); toast('Tempo testowe 5000× — pełny gaz'); }
   });
   addEventListener('keyup', (e) => {
     if (map[e.code]) keys[map[e.code]] = false;
@@ -856,10 +888,6 @@ function loop() {
     updateHud(t);
     updateLabelScales();
   }
-  // Mgła dopasowana do oddalenia: czytelna z bliska i z wysokości całego Bałtyku.
-  const distToTarget = camera.position.distanceTo(controls.target);
-  scene.fog.near = distToTarget * 1.1;
-  scene.fog.far = distToTarget * 4.0;
   controls.update();
   renderer.render(scene, camera);
 }
