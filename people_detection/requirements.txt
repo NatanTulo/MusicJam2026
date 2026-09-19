@@ -1,0 +1,5 @@
+# Core (desktop + Raspberry Pi 5)
+numpy>=1.24                      # na RPi bierzemy systemowe (apt) - wspolne z picamera2
+opencv-python-headless>=4.8      # na RPi: opencv-python-headless albo python3-opencv z apt
+onnxruntime>=1.16                # detekcja CPU; na RPi5 dziala ok (4 watki)
+pygame>=2.5                      # TYMCZASOWA wizualizacja rybek
