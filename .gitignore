@@ -2,6 +2,6 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
-models/*.onnx
+*.onnx
 recordings/
 *.mp4
