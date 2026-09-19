@@ -136,11 +136,14 @@ export class FishRenderer {
     for (const f of list) {
       alive.add(f.id);
       const m = this.meshes.get(f.id) || this._create(f);
-      const { x, z } = this.grid.latLonToWorld(f.lat, f.lon);
-      const y = -f.depth * VEX;
+      // Pozycje na sferze (ENU środka siatki): ryba pod wodą, znaczniki na tafli.
+      // h = wysokość nad poziomem morza; ryba: -depth*VEX, tafla: 0.
+      const p = this.grid.latLonToWorld(f.lat, f.lon, -f.depth * VEX);
+      const ps = this.grid.latLonToWorld(f.lat, f.lon, 0);
+      const n = this.grid.normalAt(f.lat, f.lon);
       const sp = SPECIES_BY_ID[f.species];
 
-      m.fish.position.set(x, y, z);
+      m.fish.position.set(p.x, p.y, p.z);
       m.fish.rotation.set(0, -f.heading, 0);
       const camDist = camera.position.distanceTo(m.fish.position);
       const s = Math.min(3500, Math.max(16, camDist * 0.03)) * sp.size * (0.85 + 0.3 * f.scale);
@@ -152,12 +155,12 @@ export class FishRenderer {
       m.mat.emissiveIntensity = f.state === 'searching' ? 0.5 + 0.5 * Math.sin(t * 8) : 1;
 
       const pos = m.line.geometry.attributes.position;
-      pos.setXYZ(0, x, 1, z);
-      pos.setXYZ(1, x, y, z);
+      pos.setXYZ(0, ps.x + n.x, ps.y + n.y, ps.z + n.z);
+      pos.setXYZ(1, p.x, p.y, p.z);
       pos.needsUpdate = true;
       m.line.material.opacity = 0.6 * a;
 
-      m.ring.position.set(x, 1.2, z);
+      m.ring.position.set(ps.x + n.x * 1.2, ps.y + n.y * 1.2, ps.z + n.z * 1.2);
       m.ring.scale.setScalar(s * 0.55);
       m.ring.material.opacity = 0.75 * a;
 
@@ -173,7 +176,11 @@ export class FishRenderer {
         const surfDist = camera.position.distanceTo(m.ring.position);
         const w = Math.max(50, surfDist * 0.085);
         m.label.scale.set(w, w * 0.1875, 1);
-        m.label.position.set(x, s * 0.4 + w * 0.16, z);
+        m.label.position.set(
+          ps.x + n.x * (s * 0.4 + w * 0.16),
+          ps.y + n.y * (s * 0.4 + w * 0.16),
+          ps.z + n.z * (s * 0.4 + w * 0.16),
+        );
         m.label.material.opacity = a;
       }
     }

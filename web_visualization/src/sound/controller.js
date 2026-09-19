@@ -55,19 +55,23 @@ export class SoundController {
   }
 
   /** @param state stan łódki z main.js; fish FishLayer.list(); grid BathymetryGrid */
-  update(dt, t, { state, grid, fish, VEX, camera, boatY = 0 }) {
+  update(dt, t, { state, grid, fish, VEX, camera, boatY = 0, boatPos = null }) {
     if (!grid) return;
     const seabed = grid.depthAt(state.lat, state.lon);
     this.depth = Math.max(0.3, Math.min(this.wantedDepth, seabed - 1));
 
-    // lina + sonda w 3D
-    const { x, z } = grid.latLonToWorld(state.lat, state.lon);
-    const y = -this.depth * VEX;
+    // lina + sonda w 3D na sferze (ENU środka siatki): sonda pod wodą,
+    // góra liny przy łódce (boatPos z main.js albo przybliżenie z siatki).
+    const probe = grid.latLonToWorld(state.lat, state.lon, -this.depth * VEX);
     const pos = this.cable.geometry.attributes.position;
-    pos.setXYZ(0, x, boatY + 2, z);
-    pos.setXYZ(1, x, y, z);
+    if (boatPos) pos.setXYZ(0, boatPos.x, boatPos.y + 2, boatPos.z);
+    else {
+      const top = grid.latLonToWorld(state.lat, state.lon, 0);
+      pos.setXYZ(0, top.x, (boatY || top.y) + 2, top.z);
+    }
+    pos.setXYZ(1, probe.x, probe.y, probe.z);
     pos.needsUpdate = true;
-    this.probe.position.set(x, y, z);
+    this.probe.position.set(probe.x, probe.y, probe.z);
     this.probe.scale.setScalar(Math.max(1.2, camera.position.distanceTo(this.probe.position) * 0.006));
 
     if (this.engine.running) {
