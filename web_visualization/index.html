@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Batymetry Boat — łódka po prawdziwym dnie Bałtyku</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛶</text></svg>" />
+  <link rel="stylesheet" href="./src/style.css" />
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <!-- Panel sterowania / głębokości -->
+  <aside id="panel">
+    <h1>🛶 Batymetry Boat</h1>
+    <p class="sub">Prawdziwe dno Bałtyku: <strong>EMODnet DTM 2024</strong></p>
+
+    <label class="row">Region:
+      <select id="region-select"></select>
+    </label>
+
+    <div class="depth-box">
+      <div class="depth-label">GŁĘBOKOŚĆ POD ŁÓDKĄ</div>
+      <div class="depth-line"><span id="depth-value">—</span><span class="unit">m</span></div>
+      <div id="pos-value" class="pos">—</div>
+      <div class="telemetry">
+        <div><span>Prędkość</span><strong><span id="speed-value">0.0</span> w</strong></div>
+        <div><span>Kurs</span><strong id="course-value">—</strong></div>
+      </div>
+      <div class="throttle-bar"><div id="throttle-fill"></div></div>
+      <div id="status-value" class="status ok">Ładowanie…</div>
+    </div>
+
+    <div class="block">
+      <div class="block-title">ECHOSONDA (historia głębokości)</div>
+      <canvas id="echo"></canvas>
+    </div>
+
+    <div class="block">
+      <div class="block-title">TEMPO (PRĘDKOŚĆ TESTOWA) <span id="tempo-badge" class="badge">TEST ×1</span></div>
+      <select id="tempo-select">
+        <option value="1" selected>1× — realistycznie (~16 m/s)</option>
+        <option value="100">100× — ekspres po Bałtyku</option>
+        <option value="500">500× — odrzutowiec (test mapy)</option>
+        <option value="1000">1000×</option>
+        <option value="5000">5000× — pełny gaz</option>
+      </select>
+    </div>
+
+    <div class="block">
+      <div class="block-title">PRZEWYŻSZENIE DNA <span id="vex-val">20×</span></div>
+      <input id="vex" type="range" min="1" max="40" step="1" value="20" />
+      <label class="check"><input id="water-xray" type="checkbox" checked /> prześwit dna (półprzezroczysta woda)</label>
+      <label class="check"><input id="follow-cam" type="checkbox" checked /> kamera podąża (C)</label>
+      <label class="check"><input id="borders-toggle" type="checkbox" checked /> granice państw</label>
+      <label class="check"><input id="labels-toggle" type="checkbox" checked /> nazwy państw</label>
+      <p class="tiny">Granice i nazwy: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>, <a href="https://github.com/tinyworldmap/tiny-world-map" target="_blank" rel="noopener">tinyworldmap</a> (ODbL)</p>
+    </div>
+
+    <div class="block help">
+      <div class="block-title">STEROWANIE</div>
+      <p><kbd>W</kbd>/<kbd>S</kbd> gaz / wstecz · <kbd>A</kbd>/<kbd>D</kbd> skręt · mysz: obrót/zoom · <kbd>R</kbd> restart · <kbd>C</kbd> kamera · <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd>/<kbd>4</kbd>/<kbd>5</kbd> tempo 1×/100×/500×/1000×/5000×</p>
+      <p class="tiny">API dla dewelopera: <code>boatAPI.getDepth()</code>, <code>boatAPI.getPosition()</code> — w konsoli przeglądarki.</p>
+    </div>
+  </aside>
+
+  <!-- Minimapa -->
+  <div id="minimap">
+    <canvas id="mini"></canvas>
+    <div class="legend">
+      <span>0m</span>
+      <div class="grad"></div>
+      <span>60m+</span>
+    </div>
+  </div>
+
+  <!-- Sterowanie dotykowe -->
+  <div id="touch">
+    <button data-key="a">◀</button>
+    <button data-key="w">▲</button>
+    <button data-key="s">▼</button>
+    <button data-key="d">▶</button>
+  </div>
+
+  <div id="toast"></div>
+
+  <div id="loading">
+    <div class="card">
+      <div class="spinner"></div>
+      <p id="loading-text">Ładowanie batymetrii…</p>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
