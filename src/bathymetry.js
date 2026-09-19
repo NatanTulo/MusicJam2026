@@ -3,6 +3,12 @@
 // elevation: metry względem LAT, ujemne = pod wodą, null = ląd/brak danych.
 
 export const METERS_PER_DEG_LAT = 111320;
+// Promień Ziemi: wycinek mapy jest płatem powierzchni kuli (sfera WGS84
+// przybliżona kulą), a nie płaską kartką. Współrzędne świata to lokalny
+// układ ENU styczny do sfery w środku siatki: x = wschód, y = góra
+// (radialnie od środka Ziemi), z = -północ (południe dodatnie).
+export const EARTH_R = 6371000;
+const D2R = Math.PI / 180;
 
 export class BathymetryGrid {
   constructor(meta) {
@@ -30,6 +36,16 @@ export class BathymetryGrid {
       const v = meta.elevation[i];
       this.data[i] = v === null || v === undefined ? NaN : v;
     }
+    // Cache trygonometrii środka siatki do mapowania sferycznego (ENU).
+    const latC = this.latCenter * D2R, lonC = this.lonCenter * D2R;
+    this._sinLatC = Math.sin(latC);
+    this._cosLatC = Math.cos(latC);
+    this._sinLonC = Math.sin(lonC);
+    this._cosLonC = Math.cos(lonC);
+    // ECEF środka (poziom morza, h=0) — odejmowane w latLonToWorld.
+    this._Xc = EARTH_R * this._cosLatC * this._cosLonC;
+    this._Yc = EARTH_R * this._cosLatC * this._sinLonC;
+    this._Zc = EARTH_R * this._sinLatC;
     this.fillEnclosedNulls();
     this.buildRenderData();
   }
@@ -272,18 +288,52 @@ export class BathymetryGrid {
     return Number.isNaN(e) || e >= -0.5;
   }
 
-  latLonToWorld(lat, lon) {
-    return {
-      x: (lon - this.lonCenter) * this.mPerDegLon,
-      z: -(lat - this.latCenter) * METERS_PER_DEG_LAT,
-    };
+  latLonToWorld(lat, lon, h = 0) {
+    // Pozycja punktu (lat, lon, wysokość h nad poziomem morza) na kuli
+    // o promieniu EARTH_R, wyrażona w lokalnym ENU środka siatki.
+    // x = wschód, y = góra (radialnie), z = -północ.
+    const latR = lat * D2R, lonR = lon * D2R;
+    const cosLat = Math.cos(latR), sinLat = Math.sin(latR);
+    const cosLon = Math.cos(lonR), sinLon = Math.sin(lonR);
+    const Rp = EARTH_R + h;
+    const dx = Rp * cosLat * cosLon - this._Xc;
+    const dy = Rp * cosLat * sinLon - this._Yc;
+    const dz = Rp * sinLat - this._Zc;
+    const sLc = this._sinLatC, cLc = this._cosLatC;
+    const sNc = this._sinLonC, cNc = this._cosLonC;
+    const east = -sNc * dx + cNc * dy;
+    const north = -sLc * cNc * dx - sLc * sNc * dy + cLc * dz;
+    const up = cLc * cNc * dx + cLc * sNc * dy + sLc * dz;
+    return { x: east, y: up, z: -north };
+  }
+
+  /** Wersor normalnej (pion radialny) w punkcie lat/lon, w układzie świata. */
+  normalAt(lat, lon, out) {
+    const latR = lat * D2R, lonR = lon * D2R;
+    const ux = Math.cos(latR) * Math.cos(lonR);
+    const uy = Math.cos(latR) * Math.sin(lonR);
+    const uz = Math.sin(latR);
+    const sLc = this._sinLatC, cLc = this._cosLatC;
+    const sNc = this._sinLonC, cNc = this._cosLonC;
+    const east = -sNc * ux + cNc * uy;
+    const north = -sLc * cNc * ux - sLc * sNc * uy + cLc * uz;
+    const up = cLc * cNc * ux + cLc * sNc * uy + sLc * uz;
+    if (out) { out.x = east; out.y = up; out.z = -north; return out; }
+    return { x: east, y: up, z: -north };
   }
 
   worldToLatLon(x, z) {
-    return {
-      lat: this.latCenter - z / METERS_PER_DEG_LAT,
-      lon: this.lonCenter + x / this.mPerDegLon,
-    };
+    // Odwrotność latLonToWorld dla h=0 (iteracyjnie, bo rzut sfery na
+    // płaszczyznę styczną jest nieliniowy). Start z przybliżenia płaskiego.
+    let lat = this.latCenter - z / METERS_PER_DEG_LAT;
+    let lon = this.lonCenter + x / this.mPerDegLon;
+    for (let k = 0; k < 4; k++) {
+      const p = this.latLonToWorld(lat, lon, 0);
+      const mPerDegLon = METERS_PER_DEG_LAT * Math.cos((lat * Math.PI) / 180);
+      lat += -(z - p.z) / METERS_PER_DEG_LAT;
+      lon += (x - p.x) / mPerDegLon;
+    }
+    return { lat, lon };
   }
 
   inBounds(lat, lon, margin = 0) {

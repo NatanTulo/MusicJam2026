@@ -35,7 +35,7 @@ const hud = {
 // ---------------------------------------------------------------------------
 let renderer, scene, camera, controls, clock;
 let grid = null;
-let terrainMesh = null, waterMesh = null, waterBase = null;
+let terrainMesh = null, waterMesh = null, waterBase = null, waterNorm = null;
 let boat = null, boatWake = null;
 let boatMarker = null;
 let trailLine = null;
@@ -232,8 +232,39 @@ function makeMarkerTexture() {
 }
 
 // ---------------------------------------------------------------------------
-// Teren + woda z prawdziwej batymetrii
+// Teren + woda jako wycinek powierzchni kuli (sfera, nie płaska kartka)
+// Współrzędne świata = lokalny ENU środka siatki (bathymetry.js): Ziemia
+// o promieniu 6371000 m, y = góra radialnie. Wszystkie obiekty (teren,
+// woda, łódka, granice) leżą na tej sferze; "płasko" jest tylko na minimapie.
 // ---------------------------------------------------------------------------
+const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
+const _m4 = new THREE.Matrix4();
+const UP_Y = new THREE.Vector3(0, 1, 0);
+
+/** Pozycja 3D punktu (lat, lon, h=n.p.m.) na sferze + wersor normalnej (up). */
+function surfPoint(lat, lon, h, out, outUp) {
+  const p = grid.latLonToWorld(lat, lon, h);
+  if (out) { out.set(p.x, p.y, p.z); return out; }
+  return new THREE.Vector3(p.x, p.y, p.z);
+}
+function surfNormal(lat, lon, out) {
+  const n = grid.normalAt(lat, lon, out ? { x: 0, y: 0, z: 0 } : undefined);
+  if (out) { out.set(n.x, n.y, n.z); return out; }
+  return new THREE.Vector3(n.x, n.y, n.z);
+}
+
+/** Rama styczna w (lat,lon): east, north, up (wersory świata). */
+function tangentFrame(lat, lon, east, north, up) {
+  surfNormal(lat, lon, up);
+  const eps = 0.002; // ~200 m — stabilne wersory styczne
+  const p0 = grid.latLonToWorld(lat, lon, 0);
+  const pE = grid.latLonToWorld(lat, lon + eps, 0);
+  const pN = grid.latLonToWorld(lat + eps, lon, 0);
+  east.set(pE.x - p0.x, pE.y - p0.y, pE.z - p0.z).normalize();
+  north.set(pN.x - p0.x, pN.y - p0.y, pN.z - p0.z).normalize();
+  return { east, north, up };
+}
+
 function buildTerrain() {
   if (terrainMesh) {
     scene.remove(terrainMesh);
@@ -250,23 +281,49 @@ function buildTerrain() {
   // pełną siatkę (bilinear).
   const step = MESH_STEP_OVERRIDE ?? Math.max(1, Math.round(Math.sqrt((nLat * nLon) / 1000000)));
   const segX = Math.floor((nLon - 1) / step), segY = Math.floor((nLat - 1) / step);
-  const geo = new THREE.PlaneGeometry(widthM, depthM, segX, segY);
-  geo.rotateX(-Math.PI / 2);
-  const pos = geo.attributes.position;
-  const baseElev = new Float32Array(pos.count);
-
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), z = pos.getZ(i);
-    const { lat, lon } = grid.worldToLatLon(x, z);
-    // Renderowa siatka przybrzeżna: łagodna plaża zamiast klifu/kwadratów.
-    // (Fizyka łódki cały czas używa ostrego sampleElevation.)
-    let e = grid.sampleRenderElevation(lat, lon);
-    if (Number.isNaN(e)) e = 2; // poza mapą: lekko nad wodą
-    baseElev[i] = e;
-    pos.setY(i, e * VEX);
+  // Regularna siatka lat/lon rozpięta na sferze (płat kuli): wierzchołki
+  // liczone wprost z latLonToWorld(lat, lon, e*VEX), bez pośrednictwa płaszczyzny.
+  const nx = segX + 1, ny = segY + 1;
+  const positions = new Float32Array(nx * ny * 3);
+  const uvs = new Float32Array(nx * ny * 2);
+  const baseElev = new Float32Array(nx * ny);
+  for (let r = 0; r < ny; r++) {
+    const lat = grid.lat0 + ((grid.lat1 - grid.lat0) * r) / segY;
+    for (let c = 0; c < nx; c++) {
+      const lon = grid.lon0 + ((grid.lon1 - grid.lon0) * c) / segX;
+      // Renderowa siatka przybrzeżna: łagodna plaża zamiast klifu/kwadratów.
+      // (Fizyka łódki cały czas używa ostrego sampleElevation.)
+      let e = grid.sampleRenderElevation(lat, lon);
+      if (Number.isNaN(e)) e = 2; // poza mapą: lekko nad wodą
+      const i = r * nx + c;
+      baseElev[i] = e;
+      const p = grid.latLonToWorld(lat, lon, e * VEX);
+      positions[i * 3] = p.x;
+      positions[i * 3 + 1] = p.y;
+      positions[i * 3 + 2] = p.z;
+      uvs[i * 2] = c / segX;
+      uvs[i * 2 + 1] = r / segY; // v=1 północ
+    }
   }
+  const idx = new Uint32Array(segX * segY * 6);
+  let k = 0;
+  for (let r = 0; r < segY; r++) {
+    for (let c = 0; c < segX; c++) {
+      // a=SW, b=SE, d=NW, e2=NE — ten porządek daje normalne w górę (od sfery),
+      // jak w nakładce kafla (zweryfikowane iloczynem wektorowym: wschód×północ).
+      const a = r * nx + c, b = a + 1, d = a + nx, e2 = d + 1;
+      idx[k++] = a; idx[k++] = b; idx[k++] = d;
+      idx[k++] = b; idx[k++] = e2; idx[k++] = d;
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  geo.setIndex(new THREE.BufferAttribute(idx, 1));
   geo.computeVertexNormals();
   geo.userData.baseElev = baseElev;
+  geo.userData.nx = nx;
+  geo.userData.ny = ny;
 
   // Kolor dna jako tekstura z mipmapami (zamiast kolorów per-wierzchołek):
   // z daleka mipmapy uśredniają kolor i nie ma migotania/pasków (aliasing).
@@ -274,11 +331,46 @@ function buildTerrain() {
   terrainMesh = new THREE.Mesh(geo, mat);
   scene.add(terrainMesh);
 
-  // Woda: widoczna tafla na y=0 z animowanymi falami.
+  // Woda: płat sfery na poziomie morza (h=0) + animowane fale wzdłuż normalnej.
   // Celowo wyraźna (kryjąca), żeby łódka stała NA wodzie, a nie "latała w powietrzu"
   // nad widocznym dnem. Tryb X-ray tylko rozjaśnia, ale nie znika.
-  const wgeo = new THREE.PlaneGeometry(widthM, depthM, 110, 110);
-  wgeo.rotateX(-Math.PI / 2);
+  const WSEG = 110;
+  const wnx = WSEG + 1, wny = WSEG + 1;
+  const wpos = new Float32Array(wnx * wny * 3);
+  const wuv = new Float32Array(wnx * wny * 2);
+  const wbase = new Float32Array(wnx * wny * 3);
+  const wnorm = new Float32Array(wnx * wny * 3);
+  for (let r = 0; r < wny; r++) {
+    const lat = grid.lat0 + ((grid.lat1 - grid.lat0) * r) / WSEG;
+    for (let c = 0; c < wnx; c++) {
+      const lon = grid.lon0 + ((grid.lon1 - grid.lon0) * c) / WSEG;
+      const i = r * wnx + c;
+      const p = grid.latLonToWorld(lat, lon, 0);
+      const n = grid.normalAt(lat, lon);
+      wpos[i * 3] = p.x; wpos[i * 3 + 1] = p.y; wpos[i * 3 + 2] = p.z;
+      wbase[i * 3] = p.x; wbase[i * 3 + 1] = p.y; wbase[i * 3 + 2] = p.z;
+      wnorm[i * 3] = n.x; wnorm[i * 3 + 1] = n.y; wnorm[i * 3 + 2] = n.z;
+      wuv[i * 2] = c / WSEG; wuv[i * 2 + 1] = r / WSEG;
+    }
+  }
+  const widx = new Uint32Array(WSEG * WSEG * 6);
+  {
+    let q = 0;
+    for (let r = 0; r < WSEG; r++) {
+      for (let c = 0; c < WSEG; c++) {
+        const a = r * wnx + c, b = a + 1, d = a + wnx, e2 = d + 1;
+        widx[q++] = a; widx[q++] = b; widx[q++] = d;
+        widx[q++] = b; widx[q++] = e2; widx[q++] = d;
+      }
+    }
+  }
+  const wgeo = new THREE.BufferGeometry();
+  wgeo.setAttribute('position', new THREE.BufferAttribute(wpos, 3));
+  wgeo.setAttribute('uv', new THREE.BufferAttribute(wuv, 2));
+  wgeo.setIndex(new THREE.BufferAttribute(widx, 1));
+  wgeo.computeVertexNormals();
+  wgeo.userData.base = wbase;
+  wgeo.userData.norm = wnorm;
   const wmat = new THREE.MeshPhongMaterial({
     color: 0x16617f, transparent: true, opacity: 0.45,
     shininess: 180, specular: 0xcfeeff, side: THREE.DoubleSide,
@@ -289,10 +381,11 @@ function buildTerrain() {
     polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
   });
   waterMesh = new THREE.Mesh(wgeo, wmat);
-  waterMesh.position.y = 0;
+  waterMesh.frustumCulled = false;
   waterMesh.renderOrder = 2;
   scene.add(waterMesh);
   waterBase = wgeo.attributes.position.array.slice();
+  waterNorm = wgeo.userData.norm.slice();
   applyWaterXray();
 }
 
@@ -342,13 +435,33 @@ function applyVex() {
   if (!terrainMesh) return;
   const pos = terrainMesh.geometry.attributes.position;
   const base = terrainMesh.geometry.userData.baseElev;
-  for (let i = 0; i < pos.count; i++) pos.setY(i, base[i] * VEX);
+  const nx = terrainMesh.geometry.userData.nx, ny = terrainMesh.geometry.userData.ny;
+  const segX = nx - 1, segY = ny - 1;
+  for (let r = 0; r < ny; r++) {
+    const lat = grid.lat0 + ((grid.lat1 - grid.lat0) * r) / segY;
+    for (let c = 0; c < nx; c++) {
+      const lon = grid.lon0 + ((grid.lon1 - grid.lon0) * c) / segX;
+      const i = r * nx + c;
+      const p = grid.latLonToWorld(lat, lon, base[i] * VEX);
+      pos.setXYZ(i, p.x, p.y, p.z);
+    }
+  }
   pos.needsUpdate = true;
   terrainMesh.geometry.computeVertexNormals();
   if (tileMesh) {
     const tp = tileMesh.geometry.attributes.position;
     const tb = tileMesh.geometry.userData.baseElev;
-    for (let i = 0; i < tp.count; i++) tp.setY(i, tb[i] * VEX + TILE_LIFT);
+    const tnx = tileMesh.geometry.userData.nx, tny = tileMesh.geometry.userData.ny;
+    for (let r = 0; r < tny; r++) {
+      const lat = coastTile.lat0 + ((coastTile.lat1 - coastTile.lat0) * r) / (tny - 1);
+      for (let c = 0; c < tnx; c++) {
+        const lon = coastTile.lon0 + ((coastTile.lon1 - coastTile.lon0) * c) / (tnx - 1);
+        const i = r * tnx + c;
+        const p = grid.latLonToWorld(lat, lon, tb[i] * VEX);
+        const n = grid.normalAt(lat, lon);
+        tp.setXYZ(i, p.x + n.x * TILE_LIFT, p.y + n.y * TILE_LIFT, p.z + n.z * TILE_LIFT);
+      }
+    }
     tp.needsUpdate = true;
     tileMesh.geometry.computeVertexNormals();
   }
@@ -446,11 +559,13 @@ function buildTileOverlay() {
       const lon = t.lon0 + ((t.lon1 - t.lon0) * c) / (t.nLon - 1);
       let e = tileRenderElevation(lat, lon);
       if (Number.isNaN(e)) e = 2;
-      const { x, z } = grid.latLonToWorld(lat, lon);
+      // Światowe współrzędne bazy: płat sfery + lift wzdłuż normalnej.
+      const p = grid.latLonToWorld(lat, lon, e * VEX);
+      const n = grid.normalAt(lat, lon);
       const i = r * nx + c;
-      positions[i * 3] = x;
-      positions[i * 3 + 1] = e * VEX + TILE_LIFT;
-      positions[i * 3 + 2] = z;
+      positions[i * 3] = p.x + n.x * TILE_LIFT;
+      positions[i * 3 + 1] = p.y + n.y * TILE_LIFT;
+      positions[i * 3 + 2] = p.z + n.z * TILE_LIFT;
       uvs[i * 2] = c / (t.nLon - 1);
       uvs[i * 2 + 1] = r / (t.nLat - 1); // v=0 południe, v=1 północ
       baseElev[i] = e;
@@ -469,7 +584,15 @@ function buildTileOverlay() {
     }
   }
   for (let i = 0; i < nx * ny; i++) {
-    positions[i * 3 + 1] = baseElev[i] * VEX + TILE_LIFT;
+    // przelicz po Laplacian: pozycja na sferze + lift wzdłuż normalnej
+    const r = (i / nx) | 0, c = i % nx;
+    const lat = t.lat0 + ((t.lat1 - t.lat0) * r) / (t.nLat - 1);
+    const lon = t.lon0 + ((t.lon1 - t.lon0) * c) / (t.nLon - 1);
+    const p = grid.latLonToWorld(lat, lon, baseElev[i] * VEX);
+    const n = grid.normalAt(lat, lon);
+    positions[i * 3] = p.x + n.x * TILE_LIFT;
+    positions[i * 3 + 1] = p.y + n.y * TILE_LIFT;
+    positions[i * 3 + 2] = p.z + n.z * TILE_LIFT;
   }
   const idx = new Uint32Array(segX * segY * 6);
   let k = 0;
@@ -488,6 +611,8 @@ function buildTileOverlay() {
   geo.setIndex(new THREE.BufferAttribute(idx, 1));
   geo.computeVertexNormals();
   geo.userData.baseElev = baseElev;
+  geo.userData.nx = nx;
+  geo.userData.ny = ny;
   const mat = new THREE.MeshLambertMaterial({ map: makeTileTexture() });
   tileMesh = new THREE.Mesh(geo, mat);
   tileMesh.frustumCulled = false;
@@ -560,11 +685,16 @@ async function loadBorderData() {
   }
 }
 
-/** Wysokość linii/etykiety: na lądzie wzdłuż terenu, na wodzie tuż nad taflą. */
-function borderGroundY(lat, lon) {
+/** Pozycja naziemna na sferze: teren (e*VEX, min. 0) + lift wzdłuż normalnej. */
+function groundPoint(lat, lon, lift, out) {
   let e = grid.sampleNearest(lat, lon);
   if (Number.isNaN(e)) e = 2; // jak w buildTerrain: ląd bez danych lekko nad wodą
-  return Math.max(e * VEX, 0);
+  const h = Math.max(e * VEX, 0);
+  const p = grid.latLonToWorld(lat, lon, h);
+  const n = grid.normalAt(lat, lon);
+  const v = out || new THREE.Vector3();
+  v.set(p.x + n.x * lift, p.y + n.y * lift, p.z + n.z * lift);
+  return v;
 }
 
 function inGridBounds(lat, lon, margin = 0) {
@@ -635,8 +765,7 @@ function buildBorders() {
       if (!inGridBounds(lat, lon, 0.15)) { flush(); continue; }
       const e = grid.sampleNearest(lat, lon);
       if (!Number.isNaN(e) && e < -1.5) { flush(); continue; } // woda — pomiń
-      const { x, z } = grid.latLonToWorld(lat, lon);
-      run.push(new THREE.Vector3(x, borderGroundY(lat, lon) + BORDER_LIFT(), z));
+      run.push(groundPoint(lat, lon, BORDER_LIFT()));
       runLL.push([lat, lon]);
     }
     flush();
@@ -647,9 +776,8 @@ function buildBorders() {
   labelGroup = new THREE.Group();
   for (const { name, lat, lon } of borderData.labels) {
     if (!inGridBounds(lat, lon, 0.1)) continue; // etykieta spoza regionu (np. detal Zatoki)
-    const { x, z } = grid.latLonToWorld(lat, lon);
     const sp = makeLabelSprite(name);
-    sp.position.set(x, borderGroundY(lat, lon) + LABEL_LIFT(), z);
+    groundPoint(lat, lon, LABEL_LIFT(), sp.position);
     sp.visible = showLabels;
     labelGroup.add(sp);
     labelSprites.push({ sprite: sp, lat, lon });
@@ -664,12 +792,13 @@ function updateBorderHeights() {
   for (const { line, pts } of borderVerts) {
     const attr = line.geometry.attributes.position;
     pts.forEach(([lat, lon], i) => {
-      attr.setY(i, borderGroundY(lat, lon) + BORDER_LIFT());
+      groundPoint(lat, lon, BORDER_LIFT(), _v1);
+      attr.setXYZ(i, _v1.x, _v1.y, _v1.z);
     });
     attr.needsUpdate = true;
   }
   for (const { sprite, lat, lon } of labelSprites) {
-    sprite.position.y = borderGroundY(lat, lon) + LABEL_LIFT();
+    groundPoint(lat, lon, LABEL_LIFT(), sprite.position);
   }
 }
 
@@ -695,13 +824,16 @@ function waveHeight(x, z, t) {
 function animateWater(t) {
   if (!waterMesh) return;
   const p = waterMesh.geometry.attributes.position;
-  const arr = p.array, base = waterBase;
+  const arr = p.array, base = waterBase, norm = waterNorm;
   for (let i = 0; i < p.count; i++) {
-    const x = base[i * 3], z = base[i * 3 + 2];
-    arr[i * 3 + 1] = waveHeight(x, z, t);
+    const x = base[i * 3], y = base[i * 3 + 1], z = base[i * 3 + 2];
+    const w = waveHeight(x, z, t);
+    arr[i * 3] = x + norm[i * 3] * w;
+    arr[i * 3 + 1] = y + norm[i * 3 + 1] * w;
+    arr[i * 3 + 2] = z + norm[i * 3 + 2] * w;
   }
   p.needsUpdate = true;
-  waterMesh.geometry.computeVertexNormals(); // żeby fale było widać w świetle
+  waterMesh.geometry.computeVertexNormals(); // fale + krzywizna sfery w świetle
 }
 
 // ---------------------------------------------------------------------------
@@ -785,20 +917,45 @@ function updateBoat(dt, t) {
     }
   }
 
-  // Pozycja 3D + kołysanie na fali
-  const { x, z } = grid.latLonToWorld(state.lat, state.lon);
-  const y = waveHeight(x, z, t);
-  boat.position.set(x, y + 0.4, z);
-  boat.rotation.y = -state.heading;
-  boat.rotation.z = Math.sin(t * 1.1) * 0.03 - rudder * Math.min(1, Math.abs(state.speed) / 10) * 0.06;
-  boat.rotation.x = Math.sin(t * 0.9 + 1) * 0.02 + state.throttle * 0.015;
+  // Pozycja 3D na sferze + orientacja do lokalnego pionu (normalnej radialnej).
+  // Rama styczna: east/north wyznaczone różnicami skończonymi, up = normalna.
+  const bp = grid.latLonToWorld(state.lat, state.lon, 0);
+  const up = grid.normalAt(state.lat, state.lon);
+  const upV = _v1.set(up.x, up.y, up.z);
+  // Pion kamery = lokalny pion sfery w pozycji łódki (cel kamery zawsze
+  // jest przy łódce). Bez tego horyzont wygląda na przekrzywiony, bo
+  // OrbitControls trzyma sztywne up=(0,1,0), a sfera jest tam przechylona
+  // o kilka stopni. W środku regionu normalna = (0,1,0), więc z daleka nic
+  // się nie zmienia.
+  camera.up.copy(upV);
+  const w = waveHeight(bp.x, bp.z, t);
+  const boatPos = _v2.set(bp.x + up.x * (w + 0.4), bp.y + up.y * (w + 0.4), bp.z + up.z * (w + 0.4));
+  boat.position.copy(boatPos);
+  {
+    const eps = 0.002;
+    const pE = grid.latLonToWorld(state.lat, state.lon + eps, 0);
+    const pN = grid.latLonToWorld(state.lat + eps, state.lon, 0);
+    const east = _v3.set(pE.x - bp.x, pE.y - bp.y, pE.z - bp.z).normalize().clone();
+    const north = new THREE.Vector3(pN.x - bp.x, pN.y - bp.y, pN.z - bp.z).normalize();
+    // forward: kurs 0 = północ, zgodnie ze wskazówkami zegara
+    const fwd = north.clone().multiplyScalar(Math.cos(state.heading))
+      .addScaledVector(east, Math.sin(state.heading)).normalize();
+    const right = new THREE.Vector3().crossVectors(fwd, upV).normalize();
+    const upO = new THREE.Vector3().crossVectors(right, fwd).normalize();
+    const negFwd = fwd.clone().negate();
+    _m4.makeBasis(right, upO, negFwd); // model: dziób -Z, góra +Y, prawa burta +X
+    boat.quaternion.setFromRotationMatrix(_m4);
+    boat.rotateX(Math.sin(t * 0.9 + 1) * 0.02 + state.throttle * 0.015);
+    boat.rotateZ(Math.sin(t * 1.1) * 0.03 - rudder * Math.min(1, Math.abs(state.speed) / 10) * 0.06);
+  }
 
-  // Piana pod łódką podąża za nią i kładzie się na tafli (dowód, że łódka jest na wodzie).
+  // Piana pod łódką: na tafli sfery, zorientowana w ramie stycznej.
   if (boatWake) {
-    boatWake.position.set(x, y + 0.25, z);
+    boatWake.position.set(bp.x + up.x * (w + 0.25), bp.y + up.y * (w + 0.25), bp.z + up.z * (w + 0.25));
     const stretch = 1 + Math.min(1.2, Math.abs(state.speed) / 16);
     boatWake.scale.set(1, stretch, 1);
-    boatWake.rotation.z = state.heading;
+    boatWake.rotation.set(-Math.PI / 2, 0, state.heading);
+    boatWake.quaternion.premultiply(new THREE.Quaternion().setFromUnitVectors(UP_Y, upV));
   }
 
   // Marker: stały rozmiar na ekranie, tylko gdy kamera daleko.
@@ -806,15 +963,17 @@ function updateBoat(dt, t) {
   const showMarker = camDist > 900;
   boatMarker.visible = showMarker;
   if (showMarker) {
-    boatMarker.position.set(x, y + 80, z);
+    boatMarker.position.set(
+      bp.x + up.x * (w + 80), bp.y + up.y * (w + 80), bp.z + up.z * (w + 80));
     const s = camDist * 0.055;
     boatMarker.scale.set(s, s, 1);
   }
 
-  // Ślad — tuż nad taflą wody, żeby nie wyglądał jak smuga w powietrzu
+  // Ślad — tuż nad taflą sfery, żeby nie wyglądał jak smuga w powietrzu
   if (t - lastTrailPush > 0.4 && Math.abs(state.speed) > 0.5) {
     lastTrailPush = t;
-    trailPts.push(new THREE.Vector3(x, y + 0.5, z));
+    trailPts.push(new THREE.Vector3(
+      bp.x + up.x * (w + 0.5), bp.y + up.y * (w + 0.5), bp.z + up.z * (w + 0.5)));
     trailGeoPts.push({ lat: state.lat, lon: state.lon });
     if (trailPts.length > 2000) { trailPts.shift(); trailGeoPts.shift(); }
     const attr = trailLine.geometry.attributes.position;
@@ -827,12 +986,12 @@ function updateBoat(dt, t) {
 
   // Kamera podążająca (zachowuje orbitę użytkownika)
   if (follow) {
-    const target = new THREE.Vector3(x, y, z);
+    const target = _v3.copy(boatPos).clone();
     const delta = target.clone().sub(controls.target).multiplyScalar(0.18);
     controls.target.add(delta);
     camera.position.add(delta);
   } else {
-    controls.target.set(x, y, z);
+    controls.target.copy(boatPos);
   }
 }
 
@@ -1039,9 +1198,24 @@ async function loadRegion(id) {
   else grid = await BathymetryGrid.load(id);
   refreshMeshes();
   resetBoatToStart(reg.start.lat, reg.start.lon);
-  const { x, z } = grid.latLonToWorld(state.lat, state.lon);
-  controls.target.set(x, 0, z);
-  camera.position.set(x + 110, 100, z + 215); // lekko z góry: widać łódkę i dno
+  // Kamera startowa w ramie stycznej łódki (sfera): 110 m na wschód,
+  // 100 m w górę (radialnie), 215 m na południe — widać łódkę i dno.
+  {
+    const bp = grid.latLonToWorld(state.lat, state.lon, 0);
+    const up = grid.normalAt(state.lat, state.lon);
+    const eps = 0.002;
+    const pE = grid.latLonToWorld(state.lat, state.lon + eps, 0);
+    const pN = grid.latLonToWorld(state.lat + eps, state.lon, 0);
+    const east = new THREE.Vector3(pE.x - bp.x, pE.y - bp.y, pE.z - bp.z).normalize();
+    const north = new THREE.Vector3(pN.x - bp.x, pN.y - bp.y, pN.z - bp.z).normalize();
+    const upV = new THREE.Vector3(up.x, up.y, up.z);
+    const target = new THREE.Vector3(bp.x, bp.y, bp.z);
+    controls.target.copy(target);
+    camera.position.copy(target)
+      .addScaledVector(east, 110)
+      .addScaledVector(upV, 100)
+      .addScaledVector(north, -215);
+  }
   hud.loading.style.display = 'none';
   toast(`Załadowano: ${reg.name} — min. głębokość ${Math.abs(grid.stats.min).toFixed(0)} m`);
   document.title = `Batymetry Boat — ${reg.name}`;
