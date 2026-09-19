@@ -1,0 +1,83 @@
+:root {
+  --bg: rgba(6, 20, 32, 0.82);
+  --fg: #eaf4fb;
+  --accent: #5fd68a;
+  --warn: #ffcf5f;
+  --bad: #ff6b5e;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; font-family: system-ui, Segoe UI, Roboto, sans-serif; }
+#scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+#panel {
+  position: fixed; top: 12px; left: 12px; width: 300px; max-height: calc(100vh - 24px);
+  overflow-y: auto; background: var(--bg); color: var(--fg);
+  border-radius: 14px; padding: 14px 14px 10px; backdrop-filter: blur(6px);
+  border: 1px solid rgba(255,255,255,0.12); z-index: 10;
+}
+#panel h1 { margin: 0; font-size: 19px; }
+.sub { margin: 2px 0 10px; font-size: 12px; opacity: 0.8; }
+.row { display: flex; flex-direction: column; gap: 4px; font-size: 13px; margin-bottom: 10px; }
+select, button { font-size: 13px; }
+select {
+  background: #0d2638; color: var(--fg); border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 8px; padding: 6px;
+}
+.depth-box {
+  background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px; padding: 10px; margin-bottom: 10px;
+}
+.depth-label { font-size: 11px; letter-spacing: 1px; opacity: 0.75; }
+.depth-line { display: flex; align-items: baseline; gap: 6px; }
+#depth-value { font-size: 44px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+.unit { font-size: 16px; opacity: 0.7; }
+.pos { font-size: 13px; opacity: 0.9; font-variant-numeric: tabular-nums; }
+.telemetry { display: flex; justify-content: space-between; margin-top: 6px; font-size: 13px; }
+.telemetry div { display: flex; flex-direction: column; }
+.telemetry span { opacity: 0.65; font-size: 11px; }
+.throttle-bar { height: 6px; background: rgba(255,255,255,0.12); border-radius: 4px; margin-top: 8px; overflow: hidden; }
+#throttle-fill { height: 100%; width: 0%; background: var(--accent); transition: width 80ms linear; }
+.status { margin-top: 8px; font-size: 13px; font-weight: 700; padding: 6px 8px; border-radius: 8px; }
+.status.ok { background: rgba(95,214,138,0.15); color: var(--accent); }
+.status.warn { background: rgba(255,207,95,0.15); color: var(--warn); }
+.status.bad { background: rgba(255,107,94,0.18); color: var(--bad); }
+
+.block { margin: 10px 0; }
+.block-title { font-size: 11px; letter-spacing: 0.8px; opacity: 0.75; margin-bottom: 4px; }
+#echo { width: 100%; height: 85px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12); }
+#vex { width: 100%; }
+.check { display: flex; gap: 6px; align-items: center; font-size: 13px; margin-top: 4px; }
+.help p { font-size: 12.5px; margin: 4px 0; }
+.tiny { opacity: 0.7; font-size: 11.5px !important; }
+kbd { background: #132f45; border: 1px solid rgba(255,255,255,0.25); border-radius: 5px; padding: 0 5px; font-size: 11.5px; }
+code { background: rgba(255,255,255,0.1); padding: 0 4px; border-radius: 4px; }
+
+#minimap {
+  position: fixed; top: 12px; right: 12px; z-index: 10;
+  background: var(--bg); border-radius: 14px; padding: 8px;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+#mini { width: 220px; height: 220px; border-radius: 8px; display: block; }
+.legend { display: flex; align-items: center; gap: 6px; color: var(--fg); font-size: 11px; margin-top: 6px; }
+.grad { flex: 1; height: 10px; border-radius: 5px;
+  background: linear-gradient(90deg, #9ad9cc, #4090d9, #1247b3, #04122e); }
+
+#touch { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); display: none; gap: 10px; z-index: 10; }
+#touch button {
+  width: 58px; height: 58px; font-size: 22px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.3); background: rgba(6,20,32,0.7); color: white;
+}
+@media (pointer: coarse) { #touch { display: flex; } #panel { width: 250px; } #mini { width: 150px; height: 150px; } }
+
+#toast {
+  position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+  background: rgba(6,20,32,0.9); color: var(--fg); padding: 10px 16px; border-radius: 10px;
+  font-size: 13.5px; z-index: 20; transition: opacity 0.4s; opacity: 0; pointer-events: none;
+  border: 1px solid rgba(255,255,255,0.15); max-width: 80vw; text-align: center;
+}
+#loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(4,12,20,0.7); z-index: 50; }
+#loading .card { background: #0b2233; color: white; padding: 26px 34px; border-radius: 14px; text-align: center; }
+.spinner { width: 34px; height: 34px; margin: 0 auto 12px; border-radius: 50%;
+  border: 4px solid rgba(255,255,255,0.2); border-top-color: var(--accent); animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
