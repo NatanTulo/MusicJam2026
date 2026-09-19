@@ -427,8 +427,9 @@ function makeSeabedTexture() {
 function applyWaterXray() {
   if (!waterMesh) return;
   // X-ray: dno ostro prześwituje (0.45), ale tafla zostaje czytelna przez
-  // refleks + pianę pod łódką. Bez X-ray tafla prawie kryjąca (0.9).
-  waterMesh.material.opacity = hud.waterXray.checked ? 0.45 : 0.9;
+  // refleks + pianę pod łódką. Bez X-ray tafla półprzezroczysta (0.7),
+  // żeby spod niej majaczyło dno, ale woda była wyraźnie widoczna.
+  waterMesh.material.opacity = hud.waterXray.checked ? 0.45 : 0.7;
 }
 
 function applyVex() {
