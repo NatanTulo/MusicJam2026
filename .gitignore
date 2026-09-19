@@ -1,3 +1,4 @@
+# Python (people_detection)
 __pycache__/
 *.py[cod]
 .venv/
@@ -5,3 +6,8 @@ venv/
 *.onnx
 recordings/
 *.mp4
+
+# Node (web_visualization)
+node_modules/
+dist/
+tmp-pwtest/
