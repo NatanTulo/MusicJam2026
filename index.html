@@ -45,6 +45,7 @@
         <option value="25">25×</option>
         <option value="50">50×</option>
         <option value="100">100× — ekspres po Bałtyku</option>
+        <option value="500">500× — odrzutowiec (test mapy)</option>
       </select>
     </div>
 
@@ -53,11 +54,14 @@
       <input id="vex" type="range" min="1" max="40" step="1" value="20" />
       <label class="check"><input id="water-xray" type="checkbox" checked /> prześwit dna (półprzezroczysta woda)</label>
       <label class="check"><input id="follow-cam" type="checkbox" checked /> kamera podąża (C)</label>
+      <label class="check"><input id="borders-toggle" type="checkbox" checked /> granice państw</label>
+      <label class="check"><input id="labels-toggle" type="checkbox" checked /> nazwy państw</label>
+      <p class="tiny">Granice i nazwy: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>, <a href="https://github.com/tinyworldmap/tiny-world-map" target="_blank" rel="noopener">tinyworldmap</a> (ODbL)</p>
     </div>
 
     <div class="block help">
       <div class="block-title">STEROWANIE</div>
-      <p><kbd>W</kbd>/<kbd>S</kbd> gaz / wstecz · <kbd>A</kbd>/<kbd>D</kbd> skręt · mysz: obrót/zoom · <kbd>R</kbd> restart · <kbd>C</kbd> kamera · <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> tempo 1×/10×/100×</p>
+      <p><kbd>W</kbd>/<kbd>S</kbd> gaz / wstecz · <kbd>A</kbd>/<kbd>D</kbd> skręt · mysz: obrót/zoom · <kbd>R</kbd> restart · <kbd>C</kbd> kamera · <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd>/<kbd>4</kbd> tempo 1×/10×/100×/500×</p>
       <p class="tiny">API dla dewelopera: <code>boatAPI.getDepth()</code>, <code>boatAPI.getPosition()</code> — w konsoli przeglądarki.</p>
     </div>
   </aside>

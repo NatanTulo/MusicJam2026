@@ -22,6 +22,7 @@ const hud = {
   region: $('region-select'), vex: $('vex'), vexVal: $('vex-val'),
   waterXray: $('water-xray'), followCam: $('follow-cam'),
   tempo: $('tempo-select'), tempoBadge: $('tempo-badge'),
+  bordersToggle: $('borders-toggle'), labelsToggle: $('labels-toggle'),
 };
 
 // ---------------------------------------------------------------------------
@@ -36,10 +37,19 @@ let trailLine = null;
 const trailPts = [];       // THREE.Vector3 (world)
 const trailGeoPts = [];    // lat/lon do minimapy
 const echoHistory = [];
+// Granice państw + etykiety (tiny-world-map, ODbL): dane lat/lon ładowane raz,
+// geometria 3D przebudowywana na nowo dla każdego regionu (inne mapowanie świata).
+let borderData = null;     // { borders: [[[lat,lon]...]], labels: [{name,lat,lon}] }
+let borderGroup = null;    // THREE.Group z liniami granic
+let labelGroup = null;     // THREE.Group z etykietami państw
+let borderVerts = [];      // [{ line, pts: [{lat,lon,elev}] }] — do aktualizacji przy zmianie VEX
+let labelSprites = [];     // [{ sprite, lat, lon }]
+let showBorders = true, showLabels = true;
 let keys = { w: false, s: false, a: false, d: false };
 let follow = true;
 let aground = false, outOfMap = false;
 let lastEchoPush = 0, lastTrailPush = 0, lastHud = 0;
+let stepTime = 0; // czas symulacji dla kroku testowego _step (gdy rAF stoi)
 
 const state = {
   lat: 54.52, lon: 18.95,
@@ -58,6 +68,18 @@ window.boatAPI = {
   getRegion: () => grid?.id,
   getSpeedScale: () => speedScale,
   setSpeedScale: (s) => setTempo(s),
+  // Hak testowy: deterministyczny krok fizyki + render, gdy rAF jest zdławiony
+  // (np. ukryta karta w teście). Zwraca pozycję i prędkość po kroku.
+  _step: (dt = 1 / 60) => {
+    if (!grid) return null;
+    stepTime += dt;
+    updateBoat(Math.min(dt, 0.05), stepTime);
+    animateWater(stepTime);
+    updateHud(stepTime);
+    controls.update();
+    renderer.render(scene, camera);
+    return { lat: state.lat, lon: state.lon, speed: state.speed };
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -125,16 +147,17 @@ function buildBoat() {
   const cabMat = new THREE.MeshPhongMaterial({ color: 0xf4f6f8, shininess: 80 });
   const glassMat = new THREE.MeshPhongMaterial({ color: 0x18394d, shininess: 120 });
 
-  // Kadłub: skrzynia + dziób (klin), rufa. Dziób w stronę -Z.
+  // Kadłub: skrzynia + dziób (klin). Dziób w stronę -Z.
   const hull = new THREE.Mesh(new THREE.BoxGeometry(7, 3, 16), hullMat);
   hull.position.y = 1.2;
   g.add(hull);
-  const bowShape = new THREE.CylinderGeometry(0.01, 3.5, 3, 4, 1);
-  const bow = new THREE.Mesh(bowShape, hullMat);
-  bow.rotation.y = Math.PI / 4;
-  bow.scale.set(1, 1, 1.6);
-  bow.position.set(0, 1.2, -10.6);
-  bow.rotation.x = 0;
+  // Klin dziobowy: stożek o podstawie kwadratowej, obrócony czubkiem do przodu (-Z).
+  const bowGeo = new THREE.ConeGeometry(3.5, 7, 4);
+  bowGeo.rotateY(Math.PI / 4); // kwadratowa podstawa ścianami do burt
+  bowGeo.rotateX(-Math.PI / 2); // oś wzdłuż Z, czubek na -Z
+  const bow = new THREE.Mesh(bowGeo, hullMat);
+  bow.scale.set(1, 0.45, 1); // spłaszcz do wysokości kadłuba
+  bow.position.set(0, 1.2, -11);
   g.add(bow);
   const deck = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.5, 15), deckMat);
   deck.position.y = 2.9;
@@ -269,6 +292,143 @@ function applyVex() {
   for (let i = 0; i < pos.count; i++) pos.setY(i, base[i] * VEX);
   pos.needsUpdate = true;
   terrainMesh.geometry.computeVertexNormals();
+  updateBorderHeights();
+}
+
+// ---------------------------------------------------------------------------
+// Granice państw + nazwy (tiny-world-map, dane © OSM, licencja ODbL)
+// Plik public/data/borders-baltic.json generuje scripts/extract-borders.mjs.
+// ---------------------------------------------------------------------------
+const BORDER_LIFT = () => Math.max(60, VEX * 3);   // unoszenie linii nad teren/wodę
+const LABEL_LIFT = () => Math.max(300, VEX * 15);  // kotwica etykiety nad terenem
+
+async function loadBorderData() {
+  try {
+    const res = await fetch('./data/borders-baltic.json');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    borderData = await res.json();
+  } catch (err) {
+    console.warn('Brak danych granic państw:', err.message);
+    borderData = null;
+  }
+}
+
+/** Wysokość linii/etykiety: na lądzie wzdłuż terenu, na wodzie tuż nad taflą. */
+function borderGroundY(lat, lon) {
+  let e = grid.sampleNearest(lat, lon);
+  if (Number.isNaN(e)) e = 2; // jak w buildTerrain: ląd bez danych lekko nad wodą
+  return Math.max(e * VEX, 0);
+}
+
+function inGridBounds(lat, lon, margin = 0) {
+  if (!grid) return false;
+  const b = grid.bbox;
+  return lat >= b.latMin - margin && lat <= b.latMax + margin &&
+    lon >= b.lonMin - margin && lon <= b.lonMax + margin;
+}
+
+function makeLabelSprite(text) {
+  const cv = document.createElement('canvas');
+  cv.width = 512; cv.height = 128;
+  const ctx = cv.getContext('2d');
+  ctx.font = 'bold 56px system-ui, Segoe UI, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 10;
+  ctx.strokeStyle = 'rgba(6,20,32,0.85)';
+  ctx.strokeText(text, 256, 64);
+  ctx.fillStyle = '#f2f7fb';
+  ctx.fillText(text, 256, 64);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: tex, depthTest: false, transparent: true, opacity: 0.95,
+  }));
+  sp.renderOrder = 15;
+  return sp;
+}
+
+/** Buduje linie granic + etykiety dla bieżącego regionu (po buildTerrain). */
+function buildBorders() {
+  for (const grp of [borderGroup, labelGroup]) {
+    if (!grp) continue;
+    scene.remove(grp);
+    grp.traverse((o) => {
+      o.geometry?.dispose();
+      if (o.material) {
+        o.material.map?.dispose();
+        o.material.dispose();
+      }
+    });
+  }
+  borderGroup = null;
+  labelGroup = null;
+  borderVerts = [];
+  labelSprites = [];
+  if (!borderData || !grid) return;
+
+  borderGroup = new THREE.Group();
+  const mat = new THREE.LineBasicMaterial({ color: 0x4a1f18, transparent: true, opacity: 0.9 });
+  for (const ring of borderData.borders) {
+    // Dziel na ciągi wewnątrz siatki, żeby linie nie przecinały pustki poza terenem.
+    let run = [];
+    const flush = () => {
+      if (run.length >= 2) {
+        const g = new THREE.BufferGeometry().setFromPoints(run);
+        borderGroup.add(new THREE.Line(g, mat));
+        borderVerts.push({ line: borderGroup.children[borderGroup.children.length - 1], pts: run.map((p) => p.userData.ll) });
+      }
+      run = [];
+    };
+    for (const [lat, lon] of ring) {
+      if (!inGridBounds(lat, lon, 0.15)) { flush(); continue; }
+      const { x, z } = grid.latLonToWorld(lat, lon);
+      const v = new THREE.Vector3(x, borderGroundY(lat, lon) + BORDER_LIFT(), z);
+      v.userData.ll = [lat, lon];
+      run.push(v);
+    }
+    flush();
+  }
+  borderGroup.visible = showBorders;
+  scene.add(borderGroup);
+
+  labelGroup = new THREE.Group();
+  for (const { name, lat, lon } of borderData.labels) {
+    if (!inGridBounds(lat, lon, 0.1)) continue; // etykieta spoza regionu (np. detal Zatoki)
+    const { x, z } = grid.latLonToWorld(lat, lon);
+    const sp = makeLabelSprite(name);
+    sp.position.set(x, borderGroundY(lat, lon) + LABEL_LIFT(), z);
+    sp.visible = showLabels;
+    labelGroup.add(sp);
+    labelSprites.push({ sprite: sp, lat, lon });
+  }
+  labelGroup.visible = true;
+  scene.add(labelGroup);
+}
+
+/** Po zmianie VEX: unieś linie i etykiety na nowo (geometria świata bez zmian). */
+function updateBorderHeights() {
+  if (!grid) return;
+  for (const { line, pts } of borderVerts) {
+    const attr = line.geometry.attributes.position;
+    pts.forEach(([lat, lon], i) => {
+      attr.setY(i, borderGroundY(lat, lon) + BORDER_LIFT());
+    });
+    attr.needsUpdate = true;
+  }
+  for (const { sprite, lat, lon } of labelSprites) {
+    sprite.position.y = borderGroundY(lat, lon) + LABEL_LIFT();
+  }
+}
+
+/** Stały rozmiar ekranowy etykiet (jak marker łódki): skala ~ odległość kamery. */
+function updateLabelScales() {
+  if (!labelSprites.length || !boat) return;
+  const d = camera.position.distanceTo(boat.position);
+  for (const { sprite } of labelSprites) {
+    const w = d * 0.13;
+    sprite.scale.set(w, w / 4, 1);
+  }
 }
 
 function waveHeight(x, z, t) {
@@ -343,26 +503,33 @@ function updateBoat(dt, t) {
 
   const fx = Math.sin(state.heading), fz = -Math.cos(state.heading);
   const mPerDegLat = 111320;
-  const mPerDegLon = 111320 * Math.cos((state.lat * Math.PI) / 180);
-  // dz (metry, ujemne = północ); dlat = -dz / mPerDegLat; dlon = dx / mPerDegLon
-  const nLat = state.lat + (-(fz * state.speed * dt)) / mPerDegLat;
-  const nLon = state.lon + (fx * state.speed * dt) / mPerDegLon;
-
+  // Przy 500× klatka to nawet ~400 m lotu — dzielimy ruch na podkroki ≤150 m,
+  // żeby nie przelatywać przez wąski ląd (np. Mierzeja Helska) bez kolizji.
+  const subSteps = Math.max(1, Math.ceil((Math.abs(state.speed) * dt) / 150));
+  const sdt = dt / subSteps;
   aground = false; outOfMap = false;
-  if (!grid.inBounds(nLat, nLon, 0.002)) {
-    outOfMap = true;
-    state.speed *= 0.9;
-  } else if (grid.isLand(nLat, nLon)) {
-    // spróbuj ślizgu wzdłuż przeszkody: sam X albo sam Z
-    const onlyLat = state.lat + (-(fz * state.speed * dt)) / mPerDegLat;
-    const onlyLon = state.lon + (fx * state.speed * dt) / mPerDegLon;
-    if (!grid.isLand(onlyLat, state.lon)) { state.lat = onlyLat; }
-    else if (!grid.isLand(state.lat, onlyLon)) { state.lon = onlyLon; }
-    aground = true;
-    state.speed *= 0.5;
-    if (Math.abs(state.speed) < 0.4) state.speed = 0;
-  } else {
-    state.lat = nLat; state.lon = nLon;
+  for (let s = 0; s < subSteps; s++) {
+    const mPerDegLon = 111320 * Math.cos((state.lat * Math.PI) / 180);
+    // dz (metry, ujemne = północ); dlat = -dz / mPerDegLat; dlon = dx / mPerDegLon
+    const nLat = state.lat + (-(fz * state.speed * sdt)) / mPerDegLat;
+    const nLon = state.lon + (fx * state.speed * sdt) / mPerDegLon;
+    if (!grid.inBounds(nLat, nLon, 0.002)) {
+      outOfMap = true;
+      state.speed *= 0.9;
+      break;
+    } else if (grid.isLand(nLat, nLon)) {
+      // spróbuj ślizgu wzdłuż przeszkody: sam X albo sam Z
+      const onlyLat = state.lat + (-(fz * state.speed * sdt)) / mPerDegLat;
+      const onlyLon = state.lon + (fx * state.speed * sdt) / mPerDegLon;
+      if (!grid.isLand(onlyLat, state.lon)) { state.lat = onlyLat; }
+      else if (!grid.isLand(state.lat, onlyLon)) { state.lon = onlyLon; }
+      aground = true;
+      state.speed *= 0.5;
+      if (Math.abs(state.speed) < 0.4) state.speed = 0;
+      break;
+    } else {
+      state.lat = nLat; state.lon = nLon;
+    }
   }
 
   // Pozycja 3D + kołysanie na fali
@@ -522,6 +689,22 @@ function drawMini() {
     ((lon - grid.lon0) / (grid.lon1 - grid.lon0)) * S,
     (1 - (lat - grid.lat0) / (grid.lat1 - grid.lat0)) * H,
   ];
+  // granice państw (tiny-world-map)
+  if (showBorders && borderData) {
+    ctx.strokeStyle = 'rgba(74,31,24,0.85)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (const ring of borderData.borders) {
+      let pen = false;
+      for (const [lat, lon] of ring) {
+        if (!inGridBounds(lat, lon, 0.02)) { pen = false; continue; }
+        const [x, y] = toXY(lat, lon);
+        pen ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+        pen = true;
+      }
+    }
+    ctx.stroke();
+  }
   // ślad
   ctx.strokeStyle = '#ffe08a';
   ctx.lineWidth = 3;
@@ -546,6 +729,21 @@ function drawMini() {
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
   ctx.font = 'bold 22px system-ui';
   ctx.fillText('N ↑', 8, 26);
+  // nazwy państw (tylko w granicach regionu)
+  if (showLabels && borderData) {
+    ctx.font = 'bold 19px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    for (const { name, lat, lon } of borderData.labels) {
+      if (!inGridBounds(lat, lon, 0.02)) continue;
+      const [x, y] = toXY(lat, lon);
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(6,20,32,0.8)';
+      ctx.strokeText(name, x, y);
+      ctx.fillStyle = '#f2f7fb';
+      ctx.fillText(name, x, y);
+    }
+    ctx.textAlign = 'start';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -557,11 +755,12 @@ async function loadRegion(id) {
   hud.loadingText.textContent = `Pobieranie batymetrii: ${reg.name}…`;
   grid = await BathymetryGrid.load(id);
   buildTerrain();
+  buildBorders();
   renderMiniBase();
   resetBoatToStart(reg.start.lat, reg.start.lon);
   const { x, z } = grid.latLonToWorld(state.lat, state.lon);
   controls.target.set(x, 0, z);
-  camera.position.set(x + 90, 70, z + 170);
+  camera.position.set(x + 110, 100, z + 215); // lekko z góry: widać łódkę i dno
   hud.loading.style.display = 'none';
   toast(`Załadowano: ${reg.name} — min. głębokość ${Math.abs(grid.stats.min).toFixed(0)} m`);
   document.title = `Batymetry Boat — ${reg.name}`;
@@ -569,7 +768,7 @@ async function loadRegion(id) {
 
 /** Ustawia tempo testowe (mnożnik prędkości). Zwraca znormalizowaną wartość. */
 function setTempo(s) {
-  const allowed = [1, 2, 5, 10, 25, 50, 100];
+  const allowed = [1, 2, 5, 10, 25, 50, 100, 500];
   speedScale = allowed.includes(Number(s)) ? Number(s) : 1;
   if (hud.tempo) hud.tempo.value = String(speedScale);
   if (hud.tempoBadge) {
@@ -602,10 +801,11 @@ function bindInput() {
       resetBoatToStart(reg.start.lat, reg.start.lon);
       toast('Wrócono na pozycję startową');
     }
-    // Szybkie tempa testowe: 1 = realistycznie, 2 = 10×, 3 = 100×
+    // Szybkie tempa testowe: 1 = realistycznie, 2 = 10×, 3 = 100×, 4 = 500×
     if (e.code === 'Digit1') { setTempo(1); toast('Tempo realistyczne (1×)'); }
     if (e.code === 'Digit2') { setTempo(10); toast('Tempo testowe 10×'); }
     if (e.code === 'Digit3') { setTempo(100); toast('Tempo testowe 100×'); }
+    if (e.code === 'Digit4') { setTempo(500); toast('Tempo testowe 500× — odrzutowiec'); }
   });
   addEventListener('keyup', (e) => {
     if (map[e.code]) keys[map[e.code]] = false;
@@ -633,6 +833,14 @@ function bindInput() {
   hud.followCam.addEventListener('change', () => {
     follow = hud.followCam.checked;
   });
+  hud.bordersToggle.addEventListener('change', () => {
+    showBorders = hud.bordersToggle.checked;
+    if (borderGroup) borderGroup.visible = showBorders;
+  });
+  hud.labelsToggle.addEventListener('change', () => {
+    showLabels = hud.labelsToggle.checked;
+    for (const { sprite } of labelSprites) sprite.visible = showLabels;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -646,6 +854,7 @@ function loop() {
     updateBoat(dt, t);
     animateWater(t);
     updateHud(t);
+    updateLabelScales();
   }
   // Mgła dopasowana do oddalenia: czytelna z bliska i z wysokości całego Bałtyku.
   const distToTarget = camera.position.distanceTo(controls.target);
@@ -665,7 +874,10 @@ async function main() {
   initScene();
   bindInput();
   setTempo(1);
+  showBorders = hud.bordersToggle.checked;
+  showLabels = hud.labelsToggle.checked;
   loop();
+  await loadBorderData(); // granice państw (nieblokujące dla reszty UI poza regionem)
   try {
     await loadRegion(REGIONS[0].id);
   } catch (err) {

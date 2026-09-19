@@ -36,9 +36,12 @@ Dwa regiony w grze (przełączane z GUI):
 ## Sterowanie
 
 - **W/S** – gaz / wstecz, **A/D** – skręt, mysz – orbita/zoom, **C** – kamera podążająca, **R** – restart
-- **Tempo testowe**: selektor 1–100× w panelu (lub klawisze **1**/**2**/**3** = 1×/10×/100×) — nierealistycznie szybkie rejsy po całym Bałtyku
+- **Tempo testowe**: selektor 1–500× w panelu (lub klawisze **1**/**2**/**3**/**4** = 1×/10×/100×/500×) — nierealistycznie szybkie rejsy po całym Bałtyku
 - HUD: głębokość pod łódką (m), pozycja lat/lon, prędkość (węzły), kurs, echosonda, minimapa z trasą
 - Mielizna: łódka staje, status „MIELIZNA!”
+- **Granice i nazwy państw** (3D + minimapa, z przełącznikami w panelu): dane
+  [tiny-world-map](https://github.com/tinyworldmap/tiny-world-map) © OpenStreetMap
+  contributors, licencja ODbL — lokalny wyciąg generuje `npm run fetch:borders`
 
 ## Dostęp do głębokości (API)
 
@@ -50,6 +53,7 @@ boatAPI.getElevation()   // wysokość dna względem LAT (ujemna = pod wodą)
 boatAPI.getPosition()    // { lat, lon }
 boatAPI.getSpeedKnots()  // prędkość w węzłach
 boatAPI.getHeadingDeg()  // kurs 0–360°
+boatAPI._step(dt)        // deterministyczny krok fizyki (do testów headless)
 ```
 
 ## Jak dodać nowe morze?
