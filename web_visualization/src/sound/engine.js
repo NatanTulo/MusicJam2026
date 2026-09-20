@@ -27,8 +27,8 @@ export const DEFAULT_PARAMS = {
   // dopiero na dziesiątkach km. Mnożnik pozwala usłyszeć ten efekt na małej mapie.
   absorptionGain: 20,
   // Doppler: największa dopuszczalna zmiana wysokości od ruchu (0.02 = 2 % ≈ 1/3 półtonu).
-  // Ryby w grze pływają symbolicznie szybko (gonią ludzi po kilometrach) — pełny
-  // Doppler dawałby wycie syreny, więc szybkość zmian opóźnienia jest ograniczona.
+  // Ryby pływają realistycznie (~1-2 m/s), więc prawdziwy Doppler jest znikomy;
+  // limit jest siatką bezpieczeństwa na duże skoki (np. teleport za łódką).
   doppler: 0.02,
   maxVoices: 14,          // ile ryb brzmi naraz (najgłośniejsze); reszta i tak ginie w szumie
   maxOrder: 6,            // najwyższy rząd odbić w modelu kanału

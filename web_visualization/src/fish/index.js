@@ -19,6 +19,7 @@ export class FishLayer {
     this._lastUi = -1;
     this._list = [];
     this._lastReal = null;
+    this.visibleFish = 0;   // ryb w kadrze przy ostatnim renderze (bramka teleportu)
 
     if (ui.demo) {
       ui.demo.checked = this.demoOn;
@@ -49,6 +50,7 @@ export class FishLayer {
     this.school.update(targets, dt, realDt);
     this._list = this.school.list();
     this.renderer.sync(this._list, { camera, VEX, t, audio });
+    this.visibleFish = this.renderer.visibleCount;
     if (t - this._lastUi > 0.25) { this._lastUi = t; this._updateUi(); }
   }
 
@@ -56,9 +58,18 @@ export class FishLayer {
     return this._list;
   }
 
+  /** Łowisko płynie za łódką: dopiero gdy w kadrze nie ma żadnej ryby, a łódka
+   *  jest daleko od kotwicy i nie płynie w pełnym biegu, ryby teleportują się
+   *  w jej okolice (co klatkę z main.js, widoczność z poprzedniej klatki). */
+  followBoat(lat, lon, speed = 0, gasReleased = false) {
+    const p = this.school.fromLatLon(lat, lon);
+    return this.school.followBoat(p.x, p.y, speed, gasReleased, this.visibleFish > 0);
+  }
+
   /** Środek łowiska w lat/lon (do przycisku "Pokaż łowisko"). */
   groundCenter() {
-    return { lat: this.school.lat0, lon: this.school.lon0, widthM: this.school.width, heightM: this.school.height };
+    const { lat, lon } = this.school.anchorLatLon();
+    return { lat, lon, widthM: this.school.width, heightM: this.school.height };
   }
 
   _updateUi() {
@@ -91,7 +102,7 @@ export class FishLayer {
   }
 
   drawMinimap(ctx, toXY) {
-    const g = this.cfg.ground;
+    const g = this.school.boundsLatLon();
     const [x0, y0] = toXY(g.latMax, g.lonMin);
     const [x1, y1] = toXY(g.latMin, g.lonMax);
     ctx.save();

@@ -16,10 +16,17 @@ export const FISH_CONFIG = {
   ground: { latMin: 54.485, latMax: 54.55, lonMin: 18.84, lonMax: 18.98 },
 
   minWaterDepth: 4,      // [m] ryba nie wpływa na płyciznę
-  // Prędkość symboliczna: człowiek przechodzi kadr w kilka sekund, a ryba ma za nim
-  // przepłynąć kilometry — to mapowanie, nie realizm (prawdziwy dorsz: ~1 m/s).
-  fishSpeed: 260,        // [m/s]
-  fishAccel: 700,        // [m/s²]
+  // Prędkości realistyczne (dorsz: ~1 m/s marszu, kilka m/s w zrywie).
+  // Ryby płyną spokojnie za celami z kamery, więc opóźnienia i poziomy
+  // w hydrofonie zmieniają się powoli i dźwięk jest spójny (mały Doppler).
+  // Gdy łódka odpłynie daleko od łowiska, cała ławica teleportuje się
+  // w jej okolice (followBoat) zamiast gonić przez kilometry.
+  fishSpeed: 1.6,         // [m/s] marsz; z pobudzeniem do ~2,4× tyle w zrywie
+  fishAccel: 3.0,         // [m/s²]
+  followRadius: 1200,     // [m] łódka dalej niż tyle od środka łowiska = teleport łowiska do łódki
+  teleportScatter: 120,   // [m] losowy rozrzut ryb przy teleportacji (żeby nie stały w punkcie)
+  teleportCooldown: 1.0,  // [s] nie częściej niż 1 teleport na sekundę
+  teleportMaxBoatSpeed: 2.0, // [m/s] powyżej tej prędkości teleport tylko po puszczeniu gazu
   searchGrace: 1.5,      // [s] tyle ryba czeka (krąży), gdy detektor zgubi człowieka
   leaveTime: 3.0,        // [s] tyle odpływa i gaśnie po odejściu człowieka
 };

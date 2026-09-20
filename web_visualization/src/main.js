@@ -1400,6 +1400,12 @@ function bindInput() {
 // Ryby + dźwięk
 // ---------------------------------------------------------------------------
 function updateSeaLife(dt, t) {
+  // Łowisko płynie za łódką: dopiero gdy w kadrze nie ma żadnej ryby, a łódka
+  // jest daleko od łowiska, ryby teleportują się w jej okolice — żeby hydrofon
+  // miał co słuchać. Teleport wchodzi w momencie puszczenia gazu (bez czekania
+  // na wyhamowanie) albo przy wolnej żegludze, nigdy w pełnym biegu i max 1/s.
+  // Dopóki choć jedna ryba jest widoczna, pływasz między nimi bez żadnych skoków.
+  fishLayer.followBoat(state.lat, state.lon, state.speed, !(keys.w || keys.s));
   fishLayer.update(dt, t, { camera, VEX, audio: sound?.engine?.info?.fish });
   life.update(dt, t, { VEX, state, sound: sound?.engine });
   dj.update(dt, t, { state, grid, VEX, camera });

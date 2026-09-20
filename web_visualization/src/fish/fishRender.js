@@ -166,6 +166,9 @@ export class FishRenderer {
     this.meshes = new Map();
     this.grid = null;
     this.showLabels = true;
+    this.visibleCount = 0;   // ile ryb było w kadrze przy ostatnim sync (do bramki teleportu)
+    this._frustum = new THREE.Frustum();
+    this._m4 = new THREE.Matrix4();
   }
 
   setGrid(grid) {
@@ -280,6 +283,9 @@ export class FishRenderer {
   sync(list, { camera, VEX, t, audio = [] }) {
     if (!this.grid) return;
     const voices = new Map(audio.map((r) => [r.id, r]));
+    this._frustum.setFromProjectionMatrix(
+      this._m4.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    let visible = 0;
     const alive = new Set();
     for (const f of list) {
       alive.add(f.id);
@@ -293,6 +299,8 @@ export class FishRenderer {
       const tailAmp = sp.model?.tailAmp ?? 0.35;
 
       m.fish.position.set(p.x, p.y, p.z);
+      const a = Math.max(0, Math.min(1, f.alpha));
+      if (a > 0.05 && this._frustum.containsPoint(m.fish.position)) visible++;
       if (m.flat) {
         // flądra pełza nad dnem: lekkie kołysanie placka + kurs
         m.fish.rotation.set(Math.sin(t * 1.7 + f.id) * 0.1, -f.heading, Math.sin(t * 1.1 + f.id * 2) * 0.08);
@@ -303,7 +311,6 @@ export class FishRenderer {
       const s = Math.min(3500, Math.max(16, camDist * 0.03)) * sp.size * (0.85 + 0.3 * f.scale);
       m.fish.scale.setScalar(s);
       m.tailPivot.rotation.y = Math.sin(f.tail) * (tailAmp + 0.3 * f.excitement);
-      const a = Math.max(0, Math.min(1, f.alpha));
       m.mat.opacity = a;
       // głos: brzmiąca ryba świeci mocniej (0 = nie brzmi, 1 = najgłośniej)
       const row = voices.get(f.id);
@@ -344,5 +351,6 @@ export class FishRenderer {
       }
     }
     for (const id of [...this.meshes.keys()]) if (!alive.has(id)) this._remove(id);
+    this.visibleCount = visible;
   }
 }

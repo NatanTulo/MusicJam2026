@@ -18,6 +18,10 @@ export class FishSchool {
     this.mPerDegLon = M_PER_DEG_LAT * Math.cos((this.lat0 * Math.PI) / 180);
     this.width = (g.lonMax - g.lonMin) * this.mPerDegLon;   // [m]
     this.height = (g.latMax - g.latMin) * M_PER_DEG_LAT;    // [m]
+    // Środek łowiska w układzie lokalnym [m]. followBoat() przesuwa go za łódką,
+    // więc groundToLocal() zawsze mapuje ludzi na okolicę łódki.
+    this.cx = 0;
+    this.cy = 0;
     this._seaCache = new Map();
   }
 
@@ -46,9 +50,63 @@ export class FishSchool {
     return this.depthAt(x, y) >= this.cfg.minWaterDepth;
   }
 
-  /** Podłoga z kamery (u,v) -> punkt na łowisku. v=0 (daleko od kamery) = północ. */
+  /** Podłoga z kamery (u,v) -> punkt na łowisku. v=0 (daleko od kamery) = północ.
+   *  Łowisko jest zakotwiczone w (cx, cy) — followBoat() przenosi kotwicę za łódką. */
   groundToLocal(u, v) {
-    return { x: (u - 0.5) * this.width, y: (0.5 - v) * this.height };
+    return { x: this.cx + (u - 0.5) * this.width, y: this.cy + (0.5 - v) * this.height };
+  }
+
+  /** Kotwica łowiska jako lat/lon (do minimapy i przycisku "Pokaż łowisko"). */
+  anchorLatLon() {
+    return this.toLatLon(this.cx, this.cy);
+  }
+
+  /** Prostokąt łowiska jako lat/lon (do minimapy). */
+  boundsLatLon() {
+    const sw = this.toLatLon(this.cx - this.width / 2, this.cy - this.height / 2);
+    const ne = this.toLatLon(this.cx + this.width / 2, this.cy + this.height / 2);
+    return { latMin: sw.lat, latMax: ne.lat, lonMin: sw.lon, lonMax: ne.lon };
+  }
+
+  /** Łowisko podąża za łódką: gdy łódka jest daleko od kotwicy i w kadrze nie
+   *  ma już żadnej ryby, cała kotwica (i z nią ryby) teleportuje się w okolice
+   *  łódki. Dopóki choć jedna ryba jest widoczna, gracz swobodnie pływa między
+   *  rybkami bez żadnych skoków. Teleport wchodzi gdy łódka nie płynie w pełnym
+   *  biegu (stoi/płynie wolno albo gracz właśnie puścił gaz — wtedy od razu,
+   *  bez czekania aż wyhamuje) i nie częściej niż raz na teleportCooldown.
+   *  @param bx, by pozycja łódki w metrach lokalnych (z fromLatLon)
+   *  @param boatSpeed prędkość łódki [m/s] (ujemna = wstecz)
+   *  @param gasReleased true gdy gracz nie trzyma gazu (W/S puszczone)
+   *  @param anyVisible true gdy w kadrze jest choć jedna ryba (z poprzedniej klatki)
+   *  @returns true gdy nastąpił teleport */
+  followBoat(bx, by, boatSpeed = 0, gasReleased = false, anyVisible = false) {
+    if (anyVisible) return false;   // widać ryby = pływamy między nimi, nie ruszamy niczyjego kadru
+    const radius = this.cfg.followRadius ?? 1200;
+    const cooldown = this.cfg.teleportCooldown ?? 1.0;
+    const maxBoatSpeed = this.cfg.teleportMaxBoatSpeed ?? 2.0;
+    if (Math.abs(boatSpeed) > maxBoatSpeed && !gasReleased) return false;
+    if (this.time - (this.lastTeleportAt ?? -Infinity) < cooldown) return false;
+    const dx = bx - this.cx, dy = by - this.cy;
+    if (Math.hypot(dx, dy) < radius) return false;
+    this.lastTeleportAt = this.time;
+    this.cx += dx;
+    this.cy += dy;
+    const scatter = this.cfg.teleportScatter ?? 120;
+    for (const f of this.fish.values()) {
+      f.x += dx + (Math.random() - 0.5) * scatter;
+      f.y += dy + (Math.random() - 0.5) * scatter;
+      f.tx += dx;
+      f.ty += dy;
+      // stara prędkość (pogoń przez kilometry) jest już nieaktualna —
+      // wygaszamy ją, żeby nie było skoku Dopplera po teleportacji
+      f.vx *= 0.2;
+      f.vy *= 0.2;
+      f.speed = Math.hypot(f.vx, f.vy);
+      const p = this.seaPoint(f.x, f.y);
+      f.x = p.x;
+      f.y = p.y;
+    }
+    return true;
   }
 
   /** Najbliższy punkt wody — cel na lądzie (np. Mierzeja) przesuwamy do morza. */
@@ -128,22 +186,24 @@ export class FishSchool {
     const maxSpeed = cfg.fishSpeed * (1 + 1.4 * f.excitement);
     let tx = f.tx, ty = f.ty;
     if (f.state === SEARCHING) {
-      // detektor zgubił człowieka: ryba krąży wokół ostatniej pozycji
-      const r = 350;
-      tx += Math.cos(this.time * 1.3 + f.id) * r;
-      ty += Math.sin(this.time * 1.3 + f.id) * r;
+      // detektor zgubił człowieka: ryba krąży wokół ostatniej pozycji.
+      // Promień mały (dziesiątki metrów), żeby opóźnienia w hydrofonie
+      // tylko lekko falowały, a nie skakały.
+      const r = 45;
+      tx += Math.cos(this.time * 0.35 + f.id) * r;
+      ty += Math.sin(this.time * 0.35 + f.id) * r;
     } else if (f.state === LEAVING) {
       // odpływa od środka łowiska na zewnątrz
-      const d = Math.hypot(f.x, f.y) || 1;
-      tx = f.x + (f.x / d) * 3000;
-      ty = f.y + (f.y / d) * 3000;
+      const d = Math.hypot(f.x - this.cx, f.y - this.cy) || 1;
+      tx = f.x + ((f.x - this.cx) / d) * 1500;
+      ty = f.y + ((f.y - this.cy) / d) * 1500;
     }
 
     // dążenie z hamowaniem przy celu (bez drgania wokół punktu)
     let dx = tx - f.x, dy = ty - f.y;
     const dist = Math.hypot(dx, dy);
     let desired = maxSpeed;
-    if (dist < 500) desired *= dist / 500;
+    if (dist < 60) desired *= dist / 60;
     let ax = 0, ay = 0;
     if (dist > 1e-3) {
       ax += (dx / dist) * desired - f.vx;
@@ -151,22 +211,22 @@ export class FishSchool {
     }
     ax *= 2.5; ay *= 2.5;
 
-    // rozsunięcie: ryby nie nakładają się na siebie
+    // rozsunięcie: ryby nie nakładają się na siebie (promień w metrach)
     for (const o of this.fish.values()) {
       if (o === f) continue;
       const ox = f.x - o.x, oy = f.y - o.y;
       const d = Math.hypot(ox, oy);
-      if (d > 1e-3 && d < 300) {
-        ax += (ox / d) * (300 - d) * 3;
-        ay += (oy / d) * (300 - d) * 3;
+      if (d > 1e-3 && d < 40) {
+        ax += (ox / d) * (40 - d) * 0.15;
+        ay += (oy / d) * (40 - d) * 0.15;
       }
     }
 
     // omijanie płycizn: sonda przed rybą, ucieczka w stronę głębszej wody
-    const look = Math.max(200, f.speed * 1.2);
-    const hx = f.speed > 1 ? f.vx / f.speed : 0, hy = f.speed > 1 ? f.vy / f.speed : 0;
+    const look = Math.max(30, f.speed * 2);
+    const hx = f.speed > 0.2 ? f.vx / f.speed : 0, hy = f.speed > 0.2 ? f.vy / f.speed : 0;
     if (f.state !== LEAVING && !this.isWater(f.x + hx * look, f.y + hy * look)) {
-      const e = 200;
+      const e = 30;
       const gx = this.depthAt(f.x + e, f.y) - this.depthAt(f.x - e, f.y);
       const gy = this.depthAt(f.x, f.y + e) - this.depthAt(f.x, f.y - e);
       const g = Math.hypot(gx, gy) || 1;
@@ -189,7 +249,7 @@ export class FishSchool {
     else { f.vx *= -0.3; f.vy *= -0.3; }
 
     f.speed = Math.hypot(f.vx, f.vy);
-    if (f.speed > 5) {
+    if (f.speed > 0.2) {
       const want = Math.atan2(f.vx, f.vy);       // 0 = N, zgodnie z zegarem (jak łódka)
       let diff = want - f.heading;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
@@ -208,7 +268,8 @@ export class FishSchool {
     let frac = mid + 0.55 * half * Math.sin(this.time * 0.17 + f.id * 1.7) - 0.8 * half * f.excitement;
     frac = Math.max(lo, Math.min(hi, frac));
     const target = Math.max(1, Math.min(frac * seabed, seabed - 1));
-    const step = Math.max(-12 * dt, Math.min(12 * dt, (target - f.depth) * 1.2 * dt));
+    // pionowo też realistycznie: ryba zmienia głębokość ~1 m/s, nie nurkuje jak winda
+    const step = Math.max(-1.5 * dt, Math.min(1.5 * dt, (target - f.depth) * 1.2 * dt));
     f.depth += step;
     if (seabed > 0) f.depth = Math.max(0.5, Math.min(f.depth, seabed - 0.5));
   }
