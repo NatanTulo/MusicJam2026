@@ -7,21 +7,16 @@ export const FISH_CONFIG = {
   bridgeUrl: QRY.get('fish') || `http://${HOST}:8765/fish`,
   demo: QRY.get('demo') === '1',
 
-  // ŁOWISKO: prostokąt na mapie, na który rozkładana jest podłoga z kamery
-  // (u: lewo->prawo = zachód->wschód, v: daleko->blisko = północ->południe).
+  // ŁOWISKO: ~1000 × 780 m, czyli TYLE, ŻEBY RYBY MIAŁY GDZIE PŁYWAĆ.
+  // Rozmiar łowiska przelicza ruch w kadrze na metry w morzu: przy 250 × 195 m
+  // trzynastoosobowy tłum z kamery lądował w jednym punkcie pod łódką.
+  // Tu przejście przez pół kadru to ~500 m, a marsz 131 m/s i tak dobija
+  // do celu w sekundy.
   //
-  // ~250 × 195 m, czyli TYLE, ŻEBY RYBA NADĄŻAŁA ZA CZŁOWIEKIEM. Rozmiar łowiska
-  // przelicza ruch w kadrze na metry w morzu: przy 9 × 7 km (wersja pierwotna)
-  // dwa kroki w bok to były 3 km, więc ryba płynąca 1,6 m/s nie miała szans
-  // dogonić celu i tylko dryfowała w jedną stronę. Tu przejście przez pół kadru
-  // to ~125 m — ryba realnie rusza za człowiekiem i dobija do celu, gdy ten stanie.
-  //
-  // Koszt: dno pod całym łowiskiem jest płaskie (~64 m), więc wysokość dźwięku
-  // nie zależy juz od tego, gdzie człowiek stoi — rozrzut wysokości niosą gatunki
-  // (szprot tuż pod powierzchnią, flądra przy dnie) i pobudzenie (ryba wypływa
-  // wyżej = gra wyżej). Wróć do kilometrów, jeśli ważniejsza jest zależność
-  // "pozycja w kadrze -> wysokość dźwięku" niż podążanie ryby za człowiekiem.
-  ground: { latMin: 54.51663, latMax: 54.51838, lonMin: 18.90807, lonMax: 18.91193 },
+  // Koszt: dno pod całym łowiskiem jest prawie płaskie (~64 m), więc wysokość
+  // dźwięku nie zależy juz od tego, gdzie człowiek stoi — rozrzut wysokości
+  // niosą losowa głębokość ryby (depthRepick) i gatunki (barwa głosu).
+  ground: { latMin: 54.51401, latMax: 54.52101, lonMin: 18.9023, lonMax: 18.9177 },
 
   minWaterDepth: 4,      // [m] ryba nie wpływa na płyciznę
   // Prędkości: SZTUCZNE (czytelne), w połowie między symbolicznymi 260 m/s
@@ -34,7 +29,7 @@ export const FISH_CONFIG = {
   excitementBoost: 1.4,  // maxSpeed × (1 + boost · pobudzenie), jak przed 65194c9
   chaseBoost: 1,         // dodatkowy mnożnik pogoni — wyłączony (patrz wyżej)
   chaseDistance: 90,     // [m] dystans, przy którym zryw osiąga pełną wartość
-  spacing: 14,           // [m] ryby nie nakładają się na siebie
+  spacing: 30,            // [m] osobista bańka ryby: nie podpływaj bliżej
   searchRadius: 15,      // [m] promień krążenia, gdy detektor zgubi człowieka
   fishAccel: 355,        // [m/s²] w połowie między 700 a 10
   followRadius: 600,      // [m] łódka dalej niż tyle od środka łowiska = teleport łowiska do łódki

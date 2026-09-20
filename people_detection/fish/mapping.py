@@ -102,7 +102,7 @@ class PersonToFishMapper:
         # na bieg; nizej: kazdy drobny ruch rozpedza rybe na maksa.
         use_foot: bool = True,
         auto_range: bool = True,
-        scatter: float = 0.05,            # promien rozsuniecia osob (w jednostkach podlogi)
+        scatter: float = 0.12,           # promien rozsuniecia osob (w jednostkach podlogi)
     ) -> None:
         self.margin = margin
         self.y_in = y_in

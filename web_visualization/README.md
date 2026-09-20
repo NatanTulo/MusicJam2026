@@ -58,11 +58,11 @@ npm run dev                                   # gra: panel "Ryby — ludzie z ka
 Bez detekcji: zaznacz **tryb demo** w panelu albo otwórz `?demo=1` — sztuczni ludzie
 chodzą po podłodze. Przycisk **„Pokaż łowisko”** ustawia kamerę nad rybami (`C` wraca do łódki).
 
-- **Gdzie są ryby:** podłoga z kamery jest rozłożona na **łowisko** — prostokąt w Zatoce
-  Gdańskiej wokół startu łódki (~9 × 7 km), zmiana w
-  [`src/fish/config.js`](src/fish/config.js), linia 16 (`ground`). Dno opada tam
-  z ~20 do ~70 m, więc głębokości są naprawdę różne. Cel na lądzie (np. Mierzeja)
-  jest przesuwany do najbliższej wody; ryby omijają płycizny < 4 m.
+- **Gdzie są ryby:** podłoga z kamery jest rozłożona na **łowisko** — prostokąt
+  w Zatoce Gdańskiej wokół startu łódki (~1000 × 780 m, zmiana w
+  [`src/fish/config.js`](src/fish/config.js)), na tyle duży, żeby tłum z kamery
+  nie pływał w jednym punkcie, i na tyle mały, żeby ryba dobijała do celu
+  w sekundy.
 - **Na jakiej głębokości:** losowo w całym słupie wody (1 m pod taflą – 0,5 m nad
   dnem), niezależnie od kamery. Ryba powoli dryfuje do wylosowanego celu
   (~1,5 m/s jak przy nurkowaniu), po dotarciu albo po 6–14 s losuje nowy
