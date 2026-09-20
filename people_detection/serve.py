@@ -165,6 +165,10 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--detect-fps", type=float, default=12.0)
     p.add_argument("--max-age", type=float, default=2.0,
                    help="ile sekund pamietac zgubiona osobe (dluzej = mniej 'nowych' ryb po zaslonieciu)")
+    p.add_argument("--reid-window", type=float, default=4.0,
+                   help="jak dlugo pamietac zniknietych do re-ID (0 = wylacza)")
+    p.add_argument("--excitement-speed", type=float, default=0.45,
+                   help="predkosc osoby [1/s] uznana za 'szybko' (siedzaca publika: np. 0.2)")
     p.add_argument("--host", default="0.0.0.0", help="0.0.0.0 = dostepne tez z innych urzadzen w sieci")
     p.add_argument("--port", type=int, default=config.BRIDGE_PORT)
     p.add_argument("--preview", action="store_true", help="okno z obrazem i rozpoznanymi ludzmi")
@@ -183,7 +187,7 @@ def main(argv=None) -> int:
         mirror=args.mirror, detector=args.detector, model_path=args.model,
         num_threads=args.threads, detect_fps=args.detect_fps,
         preview_width=480 if args.preview else 0,
-        tracker_kwargs={"max_age": args.max_age},
+        tracker_kwargs={"max_age": args.max_age, "reid_window": args.reid_window},
     )
     try:
         pipeline.start()
@@ -193,7 +197,7 @@ def main(argv=None) -> int:
             print("Brak nagrania testowego? Uruchom: bash media/download_sample_video.sh")
         return 1
 
-    mapper = PersonToFishMapper()
+    mapper = PersonToFishMapper(excitement_speed=args.excitement_speed)
     bus = Broadcaster()
     server = ThreadingHTTPServer((args.host, args.port), make_handler(bus))
     server.daemon_threads = True

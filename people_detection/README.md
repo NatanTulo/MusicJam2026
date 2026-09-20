@@ -163,6 +163,10 @@ dotykania ani pipeline'u, ani renderera.
 |---|---|
 | Ludzie gubieni / migotanie | `--score 0.25`, `--max-age 1.5` |
 | Fałszywe wykrycia | `--score 0.5`, `--min-hits 5` |
+| Dwie ramki na jednej osobie (duplikat) | `--nms 0.4` (domyślnie 0.5) |
+| Powrót z kadru jako „nowa” ryba | `--reid-window 6`, `--max-age 3` (`--reid-window 0` wraca do starego zachowania) |
+| Tłum z daleka (scena → publika): dużo nowych ID | patrz `churn` w `tools/diagnose.py`; churn wysoko przy stałym obłożeniu → `--max-age 3`, `--reid-window 6` |
+| Siedzący tłum: ryby ospałe mimo ruchu ludzi | `--excitement-speed 0.2` (domyślnie 0.45) w `app.py` / `serve.py` |
 | Ryby „skaczą” za osobą | niższe `smoothing` w `PeopleTracker` (domyślnie 0.55) |
 | Ryby zbyt ospałe | `base_speed` / `max_force` w `FishWorld` |
 | Ryby skupione w jednej części łowiska | `AutoRange` potrzebuje ~60 detekcji na naukę; stały zakres: `PersonToFishMapper(auto_range=False, y_in=...)` |
