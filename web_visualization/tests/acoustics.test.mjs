@@ -168,7 +168,7 @@ test('wysokość z głębokości: im głębiej, tym niżej (oktawa na 30 m)', ()
     assert.ok(m <= prev, `${d} m`);
     prev = m;
   }
-  assert.ok(fishMidi(100, MODES[1]) <= 26 + 1e-9);
+  assert.ok(fishMidi(100, MODES[1]) <= 38 + 1e-9);
 });
 
 test('falowanie zanika z głębokością (ruch orbitalny)', () => {

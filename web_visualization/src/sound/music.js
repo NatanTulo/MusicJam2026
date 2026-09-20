@@ -4,13 +4,15 @@
 //    jak głośno, jak jasno i z jakim opóźnieniem ją słychać (acoustics.js).
 //  * WYSOKOŚĆ zależy od głębokości ryby: głębiej = niżej (oktawa na 30 m).
 //  * SKALA zależy od dna pod ŁÓDKĄ (miejsce słuchacza ustala harmonię):
-//      płycizna -> pentatonika durowa, stok -> mollowa, głębia -> in-sen.
+//      płycizna -> pentatonika durowa, stok -> heksatonika durowa,
+//      głębia -> skala yo (jasna, bez półtonów).
+//    Wszystkie tryby są durowe/jasne, żeby morze brzmiało pogodnie.
 //    Wysokości ryb są przyciągane do tej skali, więc współbrzmią.
 //  * Gatunek daje BARWĘ i puls (dorsz "chrząka" rytmicznie, flądra ledwo faluje).
 export const MODES = [
   { id: 'shallow', until: 35, name: 'D-dur pentatonika', mood: 'płycizna — jasno', steps: [0, 2, 4, 7, 9] },
-  { id: 'slope', until: 75, name: 'D-moll pentatonika', mood: 'stok — melancholijnie', steps: [0, 3, 5, 7, 10] },
-  { id: 'deep', until: Infinity, name: 'D in-sen', mood: 'głębia — mrocznie', steps: [0, 1, 5, 7, 10] },
+  { id: 'slope', until: 75, name: 'D-dur heksatonika', mood: 'stok — pogodnie', steps: [0, 2, 4, 7, 9, 11] },
+  { id: 'deep', until: Infinity, name: 'D yo', mood: 'głębia — świetliście', steps: [0, 2, 5, 7, 9] },
 ];
 
 /** Skala z głębokości dna pod łódką, z histerezą 3 m (bez migotania na granicy). */
@@ -37,10 +39,10 @@ export function noteName(midi) {
 // ---------------------------------------------------------------------------
 // Wysokość z głębokości: im głębiej, tym niżej
 // ---------------------------------------------------------------------------
-/** Powierzchnia = H3 (~247 Hz), oktawa niżej co 30 m wody, najniżej D1 (~37 Hz).
- *  Przykład: 15 m ≈ 175 Hz, 30 m ≈ 123 Hz, 60 m ≈ 62 Hz, 100 m → 37 Hz.
- *  Ryba przy dnie Głębi Gdańskiej dudni, szprot przy powierzchni śpiewa. */
-export const PITCH = { surfaceMidi: 59, metersPerOctave: 30, minMidi: 26 };
+/** Powierzchnia = H4 (~494 Hz), oktawa niżej co 30 m wody, najniżej D2 (~73 Hz).
+ *  Przykład: 15 m ≈ 349 Hz, 30 m ≈ 247 Hz, 60 m ≈ 123 Hz, 100 m → 73 Hz.
+ *  Ryba przy dnie Głębi Gdańskiej mruczy, szprot przy powierzchni śpiewa wysoko. */
+export const PITCH = { surfaceMidi: 71, metersPerOctave: 30, minMidi: 38 };
 
 export function depthMidi(depth) {
   return Math.max(PITCH.minMidi, PITCH.surfaceMidi - (12 * Math.max(0, depth)) / PITCH.metersPerOctave);

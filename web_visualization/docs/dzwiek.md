@@ -25,8 +25,8 @@ widmo). W grze: panel „Dźwięk — hydrofon”, klawisze `Q`/`E`.
 
 | Cecha | Z czego | Wzór / wartość |
 |---|---|---|
-| **Wysokość** | głębokość ryby z | f₀ = 247 Hz · 2^(−z / 30 m), przyciągnięta do najbliższego dźwięku skali, z płynnym glissandem. 0 m ≈ C4 262 Hz · 15 m ≈ F3 175 Hz · 30 m ≈ C3 131 Hz · 60 m ≈ C2 65 Hz · ≥ 80 m → D1 37 Hz |
-| **Skala** | dno pod łódką | < 35 m pentatonika durowa, 35–75 m mollowa, > 75 m in-sen (tonika D) |
+| **Wysokość** | głębokość ryby z | f₀ = 494 Hz · 2^(−z / 30 m), przyciągnięta do najbliższego dźwięku skali, z płynnym glissandem. 0 m ≈ H4 494 Hz · 15 m ≈ F4 349 Hz · 30 m ≈ H3 247 Hz · 60 m ≈ H2 123 Hz · ≥ 82 m → D2 73 Hz |
+| **Skala** | dno pod łódką | < 35 m pentatonika durowa, 35–75 m heksatonika durowa, > 75 m skala yo (tonika D) — wszystkie jasne |
 | **Barwa** | gatunek | harmoniczne: szprot jasny, śledź fletowy, dorsz „chrząka” (bogate harmoniczne + puls 3 Hz), flądra miękki dron |
 | **Puls i oddech** | gatunek + ruch | modulacja amplitudy (puls 0,8–7,5 Hz, szybszy przy ruchu) i powolne „oddychanie” 0,05–0,13 Hz — żeby ciągły dźwięk żył |
 | **Głośność, jasność** | ruch człowieka (`excitement`) | poziom × (0,55 + 0,7·e), filtr barwy f₀ × jasność × (0,7 + 0,8·e) |
@@ -156,12 +156,12 @@ przez **ten sam model kanału** (3 najsilniejsze drogi + echo od terenu + pogło
 |---|---|---|---|
 | meduza | pad: podstawa + oktawa + rozstrojenie, pulsuje jak skurcz dzwonu (5–8 s) | 8–15 s | harmonia |
 | morświn | seria 8–22 kliknięć, coraz gęstsza (echolokacja; prawdziwe ~130 kHz, tu 2–4 kHz) | 3–7 s | rytm |
-| foka szara | harmoniczne z formantem (480 i 1150 Hz), zjazd wysokości + wibrato | 7–15 s | melodia |
+| foka szara | harmoniczne z formantem (480 i 1150 Hz), lekki wzlot wysokości + wibrato | 7–15 s | melodia |
 | babka bycza | 3–6 stuków: tłumiony sinus ze spadkiem wysokości, szesnastki | 3–7 s | perkusja |
 | ławica szprota | arpeggio dzwoneczków w górę skali + szum ruchu wody | 2,5–5 s | migotanie |
 | plankton | pojedyncza iskierka 3–6 kHz, tylko bliżej niż 900 m | 1,5–4 s | faktura |
 
-Momenty odezwania się są wyrównane do siatki ósemek (84 BPM) — tło ma puls, a woda
+Momenty odezwania się są wyrównane do siatki ósemek (104 BPM) — tło ma puls, a woda
 rozsuwa je potem w czasie (dalsze stworzenia się spóźniają). Wysokości: ta sama zasada
 co u ryb (głębiej = niżej), przyciągnięte do skali wyznaczonej przez dno pod łódką.
 Odzywają się tylko najbliższe osobniki liczniejszych gatunków (np. 8 meduz, 6 planktonów).

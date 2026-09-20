@@ -1,7 +1,7 @@
 // Podkład demo dla panelu DJ, generowany w kodzie (bez plików, bez licencji).
 // Szerokie pasmo celowo: stopa i bas (czy przejdą przez płytką wodę?), hi-hat
 // i arpeggio (czy woda zje górę?), akordy w środku.
-// 120 BPM, 8 taktów (16 s), pętla, D-moll: Dm – B♭ – F – C.
+// 120 BPM, 8 taktów (16 s), pętla, D-dur: D – A – Bm – G (I–V–vi–IV).
 export function makeDemoTrack(ctx) {
   const sr = ctx.sampleRate;
   const bpm = 120, beat = 60 / bpm, bars = 8;
@@ -17,8 +17,8 @@ export function makeDemoTrack(ctx) {
       L[i] += v * gl; R[i] += v * gr;
     }
   };
-  const chords = [[50, 53, 57, 60], [46, 50, 53, 57], [53, 57, 60, 64], [48, 52, 55, 59]]; // Dm7 B♭maj7 Fmaj7 Cmaj7
-  const roots = [38, 34, 41, 36];
+  const chords = [[50, 54, 57, 61], [45, 49, 52, 56], [47, 50, 54, 57], [43, 47, 50, 54]]; // Dmaj7 Amaj7 Bm7 Gmaj7
+  const roots = [38, 33, 35, 31];
 
   for (let bar = 0; bar < bars; bar++) {
     const ch = chords[bar % 4], root = roots[bar % 4];
@@ -64,4 +64,4 @@ export function makeDemoTrack(ctx) {
   return buf;
 }
 
-export const DEMO_TRACK_NAME = 'Bałtycki podkład demo (120 BPM, D-moll)';
+export const DEMO_TRACK_NAME = 'Bałtycki podkład demo (120 BPM, D-dur)';

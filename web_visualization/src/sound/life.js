@@ -3,7 +3,7 @@
 // (opóźnienie, 3 najsilniejsze drogi, echo od terenu, pogłos, odcięcie płytkiej wody).
 //
 //   meduza   -> pad (harmonia)        morświn -> kliknięcia (rytm)
-//   foka     -> zawodzenie (melodia)  babka   -> stuki (perkusja)
+//   foka     -> zawołanie (melodia)  babka   -> stuki (perkusja)
 //   ławica   -> arpeggio (migotanie)  plankton-> iskierki (faktura)
 //
 // Wysokość trzyma zasadę całego świata: głębiej = niżej (music.js), w skali z dna pod łódką.
@@ -66,10 +66,10 @@ const SYNTH = {
     });
     return normalize(d);
   },
-  /** Foka: zawodzenie — harmoniczne z formantem, zjazd wysokości i wibrato. */
+  /** Foka: radosne zawołanie — harmoniczne z formantem, lekki wzlot wysokości i wibrato. */
   foka(sr, f) {
     const dur = rand(1.4, 2.8), n = Math.floor(sr * dur), d = new Float32Array(n);
-    const drop = rand(0.7, 0.85);
+    const drop = rand(0.95, 1.08);
     let ph = 0;
     for (let i = 0; i < n; i++) {
       const t = i / sr, x = t / dur;

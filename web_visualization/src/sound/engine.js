@@ -36,8 +36,8 @@ export const DEFAULT_PARAMS = {
   reverb: 1,              // poziom pogłosu słupa wody
   echoes: 1,              // poziom ech od terenu
   life: 1,                // poziom tła z mieszkańców morza
-  bpm: 84,                // puls tła (stworzenia odzywają się na ósemkach), echosonda co takt
-  pingPeriod: 60 / 84 * 4,
+  bpm: 104,               // puls tła (stworzenia odzywają się na ósemkach), echosonda co takt
+  pingPeriod: 60 / 104 * 4,
   layers: { fish: true, life: true, surface: true, bubbles: true, deep: true, bottom: true, engine: true, ping: true },
   paths: { direct: true, surface: true, bottom: true, multi: true },
 };
