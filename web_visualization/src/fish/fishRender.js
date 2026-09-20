@@ -129,9 +129,13 @@ export class FishRenderer {
     this.meshes.delete(id);
   }
 
-  /** @param list  FishSchool.list()  @param ctx {camera, VEX, t} */
-  sync(list, { camera, VEX, t }) {
+  /** @param list  FishSchool.list()
+   *  @param ctx {camera, VEX, t, audio} — audio: wiersze engine.info.fish
+   *  ({id, note, levelDb, voiced}); brzmiąca ryba świeci mocniej, a etykieta
+   *  pokazuje dźwięk, który śpiewa. */
+  sync(list, { camera, VEX, t, audio = [] }) {
     if (!this.grid) return;
+    const voices = new Map(audio.map((r) => [r.id, r]));
     const alive = new Set();
     for (const f of list) {
       alive.add(f.id);
@@ -151,8 +155,13 @@ export class FishRenderer {
       m.tailPivot.rotation.y = Math.sin(f.tail) * (0.35 + 0.3 * f.excitement);
       const a = Math.max(0, Math.min(1, f.alpha));
       m.mat.opacity = a;
+      // głos: brzmiąca ryba świeci mocniej (0 = nie brzmi, 1 = najgłośniej)
+      const row = voices.get(f.id);
+      const glow = row?.voiced
+        ? Math.max(0.25, Math.min(1, (row.levelDb + 70) / 45))
+        : 0;
       // "szukam człowieka" = miganie
-      m.mat.emissiveIntensity = f.state === 'searching' ? 0.5 + 0.5 * Math.sin(t * 8) : 1;
+      m.mat.emissiveIntensity = f.state === 'searching' ? 0.5 + 0.5 * Math.sin(t * 8) : 1 + 1.8 * glow;
 
       const pos = m.line.geometry.attributes.position;
       pos.setXYZ(0, ps.x + n.x, ps.y + n.y, ps.z + n.z);
@@ -162,11 +171,11 @@ export class FishRenderer {
 
       m.ring.position.set(ps.x + n.x * 1.2, ps.y + n.y * 1.2, ps.z + n.z * 1.2);
       m.ring.scale.setScalar(s * 0.55);
-      m.ring.material.opacity = 0.75 * a;
+      m.ring.material.opacity = (0.75 + 0.25 * glow) * a;
 
       m.label.visible = this.showLabels && a > 0.05;
       if (m.label.visible) {
-        const text = `#${f.id} ${sp.name} · ${Math.round(f.depth)} m`;
+        const text = `#${f.id} ${sp.name} · ${Math.round(f.depth)} m` + (glow > 0 ? ` · ♪${row.note}` : '');
         if (text !== m.text) {   // tekstura tylko przy zmianie napisu, nie co klatkę
           m.label.material.map?.dispose();
           m.label.material.map = labelTexture(text, m.css);
@@ -174,7 +183,7 @@ export class FishRenderer {
           m.text = text;
         }
         const surfDist = camera.position.distanceTo(m.ring.position);
-        const w = Math.max(50, surfDist * 0.085);
+        const w = Math.max(65, surfDist * 0.11);
         m.label.scale.set(w, w * 0.1875, 1);
         m.label.position.set(
           ps.x + n.x * (s * 0.4 + w * 0.16),

@@ -135,6 +135,7 @@ export class LifeSound {
     this.engine = engine;
     this.next = new Map();     // id -> czas następnego odezwania się
     this.recent = [];          // [czas, rodzaj] — do UI
+    this.flashes = new Map();  // id -> {start, dur} (ms, zegar ścienny) — do rozbłysków w 3D
     this._cache = new Map();
   }
 
@@ -219,6 +220,11 @@ export class LifeSound {
       this._emit(c, te, listener, env, scan, cfg.level * level, step);
     }
     this.recent = this.recent.filter(([tt]) => tt > now - 10);
+    // sprzątanie starych rozbłysków (zegar ścienny)
+    const wall = performance.now();
+    for (const [id, f] of this.flashes) {
+      if (wall - f.start > f.dur + 1000) this.flashes.delete(id);
+    }
   }
 
   _emit(c, te, listener, env, scan, level, step) {
@@ -228,6 +234,10 @@ export class LifeSound {
     const plan = eng._channelPlan({ x: c.x, y: c.y, z: c.depth }, listener, env, scan, fRef, { taps: 3, echoes: 1, maxOrder: 4 });
     if (plan.landBlocked || plan.loud * level < 3e-5) return;
     this.recent.push([te, c.kind]);
+    // rozbłysk w 3D: renderer czyta flashes i rozjaśnia kropkę, która gra.
+    // start w zegarze ściennym (dźwięk jest planowany z wyprzedzeniem te-now).
+    const lagMs = Math.max(0, (te - ctx.currentTime) * 1000);
+    this.flashes.set(c.id, { start: performance.now() + lagMs, dur: Math.min(buf.duration * 1000, 4000) });
 
     const nodes = [];
     const keep = (x) => { nodes.push(x); return x; };
@@ -259,6 +269,16 @@ export class LifeSound {
       play(te + plan.main + e.extra, e.gain * level, e.cutoff, est.input);
     }
     if (plan.tail > 0) play(te + plan.main, plan.tail * level, plan.tailCutoff ?? 16000, eng.nodes.revIn);
+  }
+
+  /** Jasność rozbłysku stworzenia 0..1 (do renderera 3D): mocny atak,
+   *  potem słabsza poświata, dopóki zdarzenie brzmi. */
+  glowFor(id, wallMs = performance.now()) {
+    const f = this.flashes.get(id);
+    if (!f) return 0;
+    const age = (wallMs - f.start) / 1000;
+    if (age < 0 || age * 1000 >= f.dur) return 0;
+    return Math.min(1, 0.35 + 0.65 * Math.exp(-age / 0.5));
   }
 
   /** Ile zdarzeń każdego rodzaju w ostatnich 10 s (do panelu). */

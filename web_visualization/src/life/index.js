@@ -20,14 +20,14 @@ export class LifeLayer {
     this.sim.setGrid(grid);
   }
 
-  update(dt, t, { VEX, state }) {
+  update(dt, t, { VEX, state, sound = null }) {
     this.render.visible = this.enabled;
     if (!this.enabled || !this.grid) return;
     const nowMs = performance.now();
     const realDt = this._lastReal === null ? dt : (nowMs - this._lastReal) / 1000;
     this._lastReal = nowMs;
     this.sim.update(realDt, { lat: state.lat, lon: state.lon });
-    this.render.sync(this.sim.items, this.grid, VEX);
+    this.render.sync(this.sim.items, this.grid, VEX, sound?.lifeSound);
     if (this.ui.count && Math.floor(t * 2) !== this._lastCount) {
       this._lastCount = Math.floor(t * 2);
       const by = {};

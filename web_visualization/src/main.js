@@ -1400,8 +1400,8 @@ function bindInput() {
 // Ryby + dźwięk
 // ---------------------------------------------------------------------------
 function updateSeaLife(dt, t) {
-  fishLayer.update(dt, t, { camera, VEX });
-  life.update(dt, t, { VEX, state });
+  fishLayer.update(dt, t, { camera, VEX, audio: sound?.engine?.info?.fish });
+  life.update(dt, t, { VEX, state, sound: sound?.engine });
   dj.update(dt, t, { state, grid, VEX, camera });
   sound.update(dt, t, {
     state, grid, fish: fishLayer.list(), life: life.emitters(), music: dj.source(),

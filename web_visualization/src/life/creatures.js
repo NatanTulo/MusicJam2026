@@ -18,7 +18,7 @@ export const KINDS = {
     band: [0.05, 0.45], speed: 24, minDepth: 10,
   },
   foka: {
-    name: 'foka szara', role: 'melodia — przeciągłe zawodzenie',
+    name: 'foka szara', role: 'melodia — radosne zawołanie',
     count: 4, color: 0x9b8b78, px: 5.5, opacity: 0.8,
     band: [0.0, 0.4], speed: 14, minDepth: 5,
   },

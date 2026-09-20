@@ -41,14 +41,14 @@ export class FishLayer {
     return 'offline';
   }
 
-  update(dt, t, { camera, VEX }) {
+  update(dt, t, { camera, VEX, audio = [] }) {
     const nowMs = performance.now();
     const realDt = this._lastReal === null ? dt : (nowMs - this._lastReal) / 1000;
     this._lastReal = nowMs;
     const targets = this.demoOn ? this.demo.update(realDt) : this.link.current();
     this.school.update(targets, dt, realDt);
     this._list = this.school.list();
-    this.renderer.sync(this._list, { camera, VEX, t });
+    this.renderer.sync(this._list, { camera, VEX, t, audio });
     if (t - this._lastUi > 0.25) { this._lastUi = t; this._updateUi(); }
   }
 
