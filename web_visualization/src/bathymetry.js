@@ -276,6 +276,39 @@ export class BathymetryGrid {
     return this.data[fy * this.nLon + fx];
   }
 
+  /** Doczepia siatkę osadu (public/data/<id>.sediment.json, udział piasku 0..1).
+   *  Wymiary i georeferencja muszą się zgadzać z batymetrią — inaczej ignorujemy. */
+  attachSediment(meta) {
+    if (!meta || meta.nLat !== this.nLat || meta.nLon !== this.nLon) {
+      console.warn('Osad nie pasuje do siatki, pomijam:', meta?.id);
+      return false;
+    }
+    const s = new Float32Array(meta.nLat * meta.nLon);
+    for (let i = 0; i < meta.sand.length; i++) {
+      const v = meta.sand[i];
+      s[i] = v === null || v === undefined ? NaN : v;
+    }
+    this.sediment = s;
+    this.sedimentId = meta.id;
+    return true;
+  }
+
+  static async loadSediment(id) {
+    const res = await fetch(`./data/${id}.sediment.json`);
+    if (!res.ok) throw new Error(`Brak danych osadu (${id})`);
+    return res.json();
+  }
+
+  /** Udział piasku 0..1 w punkcie lat/lon (najbliższy sąsiad), NaN = brak danych
+   *  w EMODnet albo brak doczepionej siatki (wtedy akustyka zgaduje z głębokości). */
+  sedimentAt(lat, lon) {
+    if (!this.sediment) return NaN;
+    const fx = Math.round(((lon - this.lon0) / (this.lon1 - this.lon0)) * (this.nLon - 1));
+    const fy = Math.round(((lat - this.lat0) / (this.lat1 - this.lat0)) * (this.nLat - 1));
+    if (fx < 0 || fy < 0 || fx >= this.nLon || fy >= this.nLat) return NaN;
+    return this.sediment[fy * this.nLon + fx];
+  }
+
   /** Głębokość wody w metrach (0 na lądzie). */
   depthAt(lat, lon) {
     const e = this.sampleElevation(lat, lon);

@@ -37,6 +37,7 @@ const hud = {
   sndToggle: $('snd-toggle'), sndBadge: $('snd-badge'), hydDepth: $('hyd-depth'),
   hydVal: $('hyd-val'), seaState: $('sea-state'), seaStateVal: $('sea-state-val'), sndInfo: $('snd-info'),
   lifeToggle: $('life-toggle'), lifeCount: $('life-count'), lifeLevel: $('life-level'),
+  stereo: $('stereo'), stereoVal: $('stereo-val'),
   dj: $('dj'), djToggle: $('dj-toggle'), djDemo: $('dj-demo'), djFile: $('dj-file'), djTrack: $('dj-track'),
   djPlay: $('dj-play'), djStop: $('dj-stop'), djAhead: $('dj-ahead'), djGround: $('dj-ground'), djHel: $('dj-hel'),
   djPick: $('dj-pick'), djDepth: $('dj-depth'), djDepthVal: $('dj-depth-val'), djPower: $('dj-power'),
@@ -198,6 +199,7 @@ function initScene() {
   sound = new SoundController(scene, {
     toggle: hud.sndToggle, badge: hud.sndBadge, depth: hud.hydDepth, depthVal: hud.hydVal,
     seaState: hud.seaState, info: hud.sndInfo, life: hud.lifeLevel,
+    stereo: hud.stereo, stereoVal: hud.stereoVal,
   });
   life = new LifeLayer(scene, { toggle: hud.lifeToggle, count: hud.lifeCount });
   dj = new DjPanel(scene, {
@@ -1239,12 +1241,28 @@ function refreshMeshes() {
   renderMiniBase();
 }
 
+/** Osad dna z EMODnet Geology (gdy jest raster dla regionu) — inaczej akustyka
+ *  zgaduje piasek/muł z głębokości. Nieblokujące: brak pliku = fallback. */
+async function attachSediment(target) {
+  try {
+    const meta = await BathymetryGrid.loadSediment(target.id);
+    if (target.attachSediment(meta)) {
+      console.info(`Osad dna: mapa EMODnet (${meta.stats.withData}/${meta.stats.cells} komórek)`);
+      return true;
+    }
+  } catch (err) {
+    console.warn('Osad EMODnet niedostępny, zgaduję z głębokości:', err.message);
+  }
+  return false;
+}
+
 async function loadRegion(id) {
   hud.loading.style.display = 'flex';
   const reg = REGIONS.find((r) => r.id === id);
   hud.loadingText.textContent = `Pobieranie batymetrii: ${reg.name}…`;
   if (id === 'baltic-full' && fullGrid) grid = fullGrid;
   else grid = await BathymetryGrid.load(id);
+  await attachSediment(grid);
   refreshMeshes();
   resetBoatToStart(reg.start.lat, reg.start.lon);
   // Kamera startowa w ramie stycznej łódki (sfera): 110 m na wschód,
@@ -1281,6 +1299,7 @@ async function kickFullResUpgrade() {
     fullGrid = g;
     if (my !== upgradeToken || grid.id !== 'baltic-full') return; // użytkownik zmienił region
     grid = fullGrid;
+    await attachSediment(grid);
     refreshMeshes();
     toast('Pełna rozdzielczość gotowa — brzegi i rynny dokładniejsze');
     kickTileUpgrade(); // dalej: detal wybrzeża (~230 m) jako nakładka

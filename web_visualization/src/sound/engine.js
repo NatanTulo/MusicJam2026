@@ -14,6 +14,7 @@
 import {
   channel, terrainEchoes, scanReflectors, waterColumnReverb, fitTap, gainAt, FREQ_GRID,
   seaStateInfo, orbitalDecay, soundSpeedAt, bottomReflection, BALTIC_SUMMER,
+  stereoCues, planeWaveITD, sedimentSand, sedimentName,
 } from './acoustics.js';
 import { modeForSeabed, fishMidi, midiToHz, noteName } from './music.js';
 import { SPECIES_BY_ID } from '../fish/species.js';
@@ -31,6 +32,7 @@ export const DEFAULT_PARAMS = {
   doppler: 0.02,
   maxVoices: 14,          // ile ryb brzmi naraz (najgłośniejsze); reszta i tak ginie w szumie
   maxOrder: 6,            // najwyższy rząd odbić w modelu kanału
+  baseline: 3,            // [m] rozstaw uszu hydrofonu stereo (0 = mono, wtedy wraca panorama)
   reverb: 1,              // poziom pogłosu słupa wody
   echoes: 1,              // poziom ech od terenu
   life: 1,                // poziom tła z mieszkańców morza
@@ -53,6 +55,33 @@ function clone(o) {
 const dB = (x) => 20 * Math.log10(Math.abs(x) + 1e-12);
 
 // ---------------------------------------------------------------------------
+// Wyjście stereo z prawdziwym ITD/ILD: wejście -> [dL/dR, gL/gR] -> merger(2).
+// itd [s]: + = prawy później (źródło z lewej); ildDb [dB]: lewy minus prawy.
+// pan: zapasowa panorama (equal-power, jak stary StereoPanner) na wypadek
+// mono (baseline 0) albo planów bez wskazówek. Używają ChannelChain i life.js.
+// ---------------------------------------------------------------------------
+export function createStereoOut(ctx, dest, keep = (x) => x) {
+  const input = keep(ctx.createGain());
+  const dL = keep(ctx.createDelay(0.05)), dR = keep(ctx.createDelay(0.05));
+  const gL = keep(ctx.createGain()), gR = keep(ctx.createGain());
+  const merger = keep(ctx.createChannelMerger(2));
+  input.connect(dL).connect(gL).connect(merger, 0, 0);
+  input.connect(dR).connect(gR).connect(merger, 0, 1);
+  merger.connect(dest);
+  const set = (now, { itd = 0, ildDb = 0, pan = 0 } = {}, tc = 0.2) => {
+    const half = Math.max(-0.02, Math.min(0.02, itd)) / 2;   // max ±20 ms — uszy są blisko siebie
+    dL.delayTime.setTargetAtTime(Math.max(0, -half), now, tc);
+    dR.delayTime.setTargetAtTime(Math.max(0, half), now, tc);
+    const ild = ildDb / 2;
+    const pl = Math.cos(((pan + 1) * Math.PI) / 4), pr = Math.sin(((pan + 1) * Math.PI) / 4);
+    gL.gain.setTargetAtTime(10 ** (ild / 20) * pl, now, tc);
+    gR.gain.setTargetAtTime(10 ** (-ild / 20) * pr, now, tc);
+  };
+  set(ctx.currentTime, {});
+  return { input, set };
+}
+
+// ---------------------------------------------------------------------------
 // Kanał akustyczny w węzłach WebAudio: wejście -> opóźnienie -> drogi/echa/pogłos
 // Ten sam tor obsługuje rybę i podwodny głośnik DJ.
 // ---------------------------------------------------------------------------
@@ -73,15 +102,14 @@ class ChannelChain {
     this.maxMain = maxMain;
     this.hp = filt('highpass', 20, 0.9);         // odcięcie płytkiej wody
     this.input.connect(this.main).connect(this.hp);
-    this.pan = keep(ctx.createStereoPanner());
-    this.pan.connect(n.fishBus);
+    this.stereo = createStereoOut(ctx, n.fishBus, keep);
     this.taps = [];
     for (let i = 0; i < TAPS; i++) {
       const d = i === 0 ? null : delay(MAX_TAP_DELAY);
       const f = filt('lowpass', 16000);
       const g = gain(0);
       (d ? this.hp.connect(d).connect(f) : this.hp.connect(f));
-      f.connect(g).connect(this.pan);
+      f.connect(g).connect(this.stereo.input);
       this.taps.push({ d, f, g, cur: null });
     }
     this.echoes = [];
@@ -89,9 +117,9 @@ class ChannelChain {
       const d = delay(MAX_ECHO_DELAY);
       const f = filt('lowpass', 16000);
       const g = gain(0);
-      const pn = keep(ctx.createStereoPanner());
-      this.hp.connect(d).connect(f).connect(g).connect(pn).connect(n.fishBus);
-      this.echoes.push({ d, f, g, p: pn, cur: null });
+      const st = createStereoOut(ctx, n.fishBus, keep);   // echo ma własny kierunek
+      this.hp.connect(d).connect(f).connect(g).connect(st.input);
+      this.echoes.push({ d, f, g, st, cur: null });
     }
     this.tailLp = filt('lowpass', 16000);        // ogon też traci górę po drodze
     this.tail = gain(0);
@@ -122,11 +150,11 @@ class ChannelChain {
     return next;
   }
 
-  /** plan: {main, taps[], echoes[], tail, pan, cutoffHz} z SeaSoundEngine._channelPlan */
+  /** plan: {main, taps[], echoes[], tail, itd, ildDb, pan, cutoffHz} z SeaSoundEngine._channelPlan */
   apply(plan, now, dt, rate, level = 1) {
     const tc = 0.1;
     this.hp.frequency.setTargetAtTime(Math.min(4000, Math.max(20, plan.cutoffHz)), now, 0.3);
-    this.pan.pan.setTargetAtTime(plan.pan, now, 0.2);
+    this.stereo.set(now, plan);
     const prev = this.mainCur;
     const target = Math.min(plan.main, this.maxMain * 0.99);
     // duży skok (przestawiony głośnik, ryba "dogoniona" po długim ruchu): krótkie wyciszenie
@@ -147,7 +175,7 @@ class ChannelChain {
       if (ep) {
         e.cur = this._slide(e.d.delayTime, e.cur, ep.extra, now, dt, rate * 2, e.g.gain, g);
         e.f.frequency.setTargetAtTime(ep.cutoff, now, tc);
-        e.p.pan.setTargetAtTime(ep.pan, now, 0.2);
+        e.st.set(now, ep, 0.2);
       }
       e.g.gain.setTargetAtTime(g, now, 0.15);
     });
@@ -306,6 +334,11 @@ export class SeaSoundEngine {
     const offline = typeof this.ctx.startRendering === 'function';
     if (!offline && this.ctx.state === 'suspended') await this.ctx.resume();
     if (!this.nodes) this._build();
+    // _build stawia domyślne wzmocnienia — nałóż aktualne params (setParams
+    // przed startem, np. z renderOffline, nie miało do czego ich zastosować).
+    const t = this.ctx.currentTime;
+    this.nodes.master.gain.setTargetAtTime(this.params.volume, t, 0.05);
+    this.nodes.revOut.gain.setTargetAtTime(0.9 * this.params.reverb, t, 0.1);
     this.running = true;
   }
 
@@ -448,7 +481,7 @@ export class SeaSoundEngine {
     this._updateAmbient(listener, now);
     this._scheduleBubbles(listener, now);
     this._schedulePing(listener, now);
-    this._updateReverb(listener, now);
+    this._updateReverb(listener, env, now);
     if (this.params.layers.life) {
       this.lifeSound.update(listener, life, env, this._reflectors(listener, env), now, this.lookahead);
     }
@@ -584,9 +617,10 @@ export class SeaSoundEngine {
   // -------------------------------------------------------------------------
   // Pogłos słupa wody: odpowiedź impulsowa z modelu (T60, trzepotanie)
   // -------------------------------------------------------------------------
-  _updateReverb(listener, now) {
-    const rv = waterColumnReverb(listener.seabed, this.params.seaState);
-    const key = `${rv.t60.toFixed(1)}|${rv.t60High.toFixed(1)}|${(rv.flutterPeriod * 1000).toFixed(0)}`;
+  _updateReverb(listener, env, now) {
+    const sand = sedimentSand(env, listener.x, listener.y).sand;
+    const rv = waterColumnReverb(listener.seabed, this.params.seaState, env.profile || BALTIC_SUMMER, sand);
+    const key = `${rv.t60.toFixed(1)}|${rv.t60High.toFixed(1)}|${(rv.flutterPeriod * 1000).toFixed(0)}|${(sand ?? -1).toFixed(2)}`;
     this.reverbInfo = rv;
     if (key === this._reverbKey) return;
     if (this._reverbAt && now - this._reverbAt < 1.5) return;   // nie częściej niż co 1,5 s
@@ -661,6 +695,8 @@ export class SeaSoundEngine {
       maxOrder: maxOrder ?? this.params.maxOrder, paths: this.params.paths,
     };
     const ch = channel(src, rcv, env, opts);
+    const baseline = this.params.baseline ?? 0;
+    const cues = stereoCues(src, listener, baseline, ch.cMean);
     const ranked = ch.arrivals
       .map((a) => ({ a, g: gainAt(ch.freqs, a.gains, fRef) }))
       .filter((x) => Math.abs(x.g) > 1e-5);
@@ -693,9 +729,12 @@ export class SeaSoundEngine {
         .filter((e) => e.delay - main > 0.02 && e.delay - main < MAX_ECHO_DELAY * 0.97)
         .map((e) => {
           const fit = fitTap(FREQ_GRID, e.gains, fRef);
+          const rel = e.bearing - (listener.heading ?? 0);
           return {
             extra: e.delay - main, gain: fit.gain * this.params.echoes, cutoff: fit.cutoff, delay: e.delay,
-            pan: Math.sin(e.bearing - (listener.heading ?? 0)) * 0.85, label: e.label, range: e.reflector.range,
+            itd: planeWaveITD(e.bearing, listener.heading ?? 0, baseline, ch.cMean),
+            ildDb: 0,   // echo z km: fala płaska, wskazówką jest sam czas
+            pan: Math.sin(rel) * 0.85, label: e.label, range: e.reflector.range,
           };
         })
       : [];
@@ -704,6 +743,7 @@ export class SeaSoundEngine {
     const loud = Math.max(...taps.map((t) => Math.abs(t.gain)), ...echoes.map((e) => Math.abs(e.gain)), tail, 0);
     return {
       main, taps, echoes, tail, tailCutoff, loud,
+      itd: cues.itd, ildDb: cues.ildDb,
       pan: Math.sin(ch.bearing - (listener.heading ?? 0)) * 0.85,
       cutoffHz: ch.cutoffHz, landBlocked: ch.landBlocked,
       range: ch.rh, dist: ch.r, D: ch.D, Dmin: ch.Dmin, nArrivals: ch.arrivals.length, arrivals: ch.arrivals,
@@ -808,12 +848,14 @@ export class SeaSoundEngine {
     const rows = this._plans.map((p) => ({
       id: p.id, species: p.species, depth: p.depth, note: p.note, hz: p.f0,
       range: p.range, dist: p.dist, delay: p.main, doppler: p.doppler ?? 0,
+      itdMs: (p.itd ?? 0) * 1000, ildDb: p.ildDb ?? 0,
       levelDb: p.priorityDb, voiced: p.voiced, cutoffHz: p.cutoffHz, landBlocked: p.landBlocked,
       taps: p.taps.map((t) => ({ label: t.label, kind: t.kind, delay: t.delay, gainDb: dB(t.gain) })),
       echoes: p.echoes.map((e) => ({ label: e.label, delay: e.delay, gainDb: dB(e.gain), range: e.range })),
       tailDb: dB(p.tail), nArrivals: p.nArrivals,
     })).sort((a, b) => b.levelDb - a.levelDb);
     const rv = this.reverbInfo || waterColumnReverb(D, this.params.seaState, profile);
+    const sed = sedimentSand(env, listener.x, listener.y);
     this.info = {
       fish: rows,
       mode: this.mode,
@@ -827,6 +869,8 @@ export class SeaSoundEngine {
         c: soundSpeedAt(h, profile),
         temperature: profile.temperature(h),
         salinity: profile.salinity(h),
+        sand: sed.sand, sandSource: sed.source,
+        sediment: sed.sand === null ? 'model z głębokości' : sedimentName(sed.sand),
         pingEchoMs: ((2 * D) / soundSpeedAt(D / 2, profile)) * 1000,
       },
       ambient: this._ambient,

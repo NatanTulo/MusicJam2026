@@ -59,7 +59,7 @@ n = 0 z plusem to droga bezpośrednia; liczymy wszystkie drogi do rzędu 6 (n_d 
   | Człon | Model |
   |---|---|
   | R_s — powierzchnia | −exp(−2(kσ sin θ)²), k = 2πf/c, σ = Hs/4 ze stanu morza. **Znak minus: każde odbicie od powierzchni odwraca fazę.** Szorstka fala nie odbija wysokich tonów. |
-  | R_b — dno | piasek (< 40 m): 0,85 poniżej kąta krytycznego 25°, 0,45 powyżej; muł (> 70 m): 0,18; pomiędzy płynnie |
+  | R_b — dno | udział piasku z mapy EMODnet Geology (Seabed Substrate 250k, Folk→piasek), fallback: piasek (< 40 m): 0,85 poniżej kąta krytycznego 25°, 0,45 powyżej; muł (> 70 m): 0,18; pomiędzy płynnie. Raster: `npm run fetch:sediment` → `public/data/*.sediment.json`; w grze doczepiany do siatki (`attachSediment`), poza zasięgiem mapy wraca model z głębokości |
   | α — pochłanianie | Ainslie & McColm (1998), profil Bałtyku (T, S z głębokości), × „Pochłanianie ×” (domyślnie 20) |
   | S — cień | dyfrakcja na krawędzi (ITU-R P.526) na **prawdziwej łamanej** drogi: punkty odbić od dna leżą na rzeczywistym dnie, każdy odcinek sprawdzany z batymetrią. Strata rośnie ~3 dB/oktawę |
 
@@ -138,10 +138,10 @@ impulsy trzepotania) i podmienia płynnie, gdy łódka zmienia miejsce.
 |---|---|
 | najwcześniejsza droga τ_min | linia opóźniająca (do 6 s ≈ 8,5 km). **Jej zmiana w czasie to Doppler** — ograniczony do 2 % (suwak), bo ryby w grze pływają symbolicznie szybko |
 | 4 najsilniejsze drogi | +Δτ (do 1 s), wzmocnienie ze znakiem (faza!), filtr dolnoprzepustowy dopasowany do Aᵢ(f) (poziom przy f₀ + punkt −3 dB) |
-| 2 echa od terenu | +Δτ (do 4,6 s), filtr, poziom, własny panoramowanie |
+| 2 echa od terenu | +Δτ (do 4,6 s), filtr, poziom, własne ITD od strony ściany (fala płaska) |
 | reszta dróg | wysyłka do pogłosu (splot, dwa bufory na zmianę) |
 | odcięcie płytkiej wody | filtr górnoprzepustowy na f_c |
-| kierunek do ryby | panorama stereo względem dziobu łódki |
+| kierunek do ryby | **hydrofon stereo**: dwa uszy na wysięgnikach (rozstaw suwakiem, domyślnie 3 m) — prawdziwe ITD (max ~2 ms) + ILD z geometrii (`stereoCues`); przy rozstawie 0 wraca panorama. Odbicia wielokrotne dzielą ITD drogi bezpośredniej (przybliżenie), echa liczą własne |
 
 Kanał przeliczany jest ~8 razy/s, a wszystkie parametry w audio zmieniają się płynnie.
 Nagłe skoki (np. nowa ściana) robimy przez krótkie wyciszenie, żeby nie „wyło”.
@@ -183,7 +183,8 @@ Zmierzone (szum różowy zamiast muzyki, żeby widmo było porównywalne; analiz
 | płycizna 3 m, 13,6 km | −24 dB | −6,3 | **−31,5** | **−54,7** | bas ucięty < 49 Hz, dolot 9,2 s |
 | przy cyplu Helu, 13,2 km | −29 dB | −6,3 | −27,7 | −45,4 | echo od stoku 0,2 s po dźwięku wprost |
 
-(Wartości widma względem oryginału, odniesienie 150–600 Hz.)
+(Wartości widma względem oryginału, odniesienie 150–600 Hz. Mierzone przed hydrofonem
+stereo i mapą osadu, w grze — po zmianach do potwierdzenia na ucho.)
 
 ## Brzmienie na różnych głębokościach hydrofonu
 
@@ -195,27 +196,37 @@ Zmierzone (szum różowy zamiast muzyki, żeby widmo było porównywalne; analiz
 
 ## Pomiary
 
-Render offline z laboratorium (ten sam los w każdym wariancie; powtórzysz w konsoli:
+Render offline z laboratorium (determinystyczny: `renderOffline` domyślnie sieje los
+seedem 7, więc powtórzenie daje bit-identyczny wynik; powtórzysz w konsoli:
 `await soundLab.renderOffline({ depth: 5, seconds: 8, fishUntil: 3 })`).
+Wiersze z samymi rybami liczone z wyłączonym tłem
+(`layers: { surface: false, bubbles: false, deep: false, bottom: false, engine: false, ping: false, life: false }`).
 
 | Co | Wynik |
 |---|---|
-| **Wszystkie ryby naraz, ciągle** (4 ryby) | głośność w oknach 100 ms waha się tylko o 2 dB (−31,2…−29,0 dB), w widmie jednocześnie 83, 124, 183, 221, 248 Hz |
-| **Głębiej = niżej** | ryby na 8 m: środek widma 262 Hz; te same na 70 m: 100 Hz (najniższy szczyt 48 Hz) |
-| **Przedłużanie** — wybrzmiewanie po zniknięciu ryby (+0,5 / +1 / +2 s) | płycizna, piasek 14 m: −12 / −17 / −35 dB; Głębia, muł 105 m: −16 / −23 / −43 dB |
-| **Echo od brzegu** (ryba 300 m od łódki, brzeg 2,7 km) | model: echo po 3,45 s; nagranie: 3,8–4,7 s głośniej o 5,7–7,7 dB niż bez ech |
-| **Lustro Lloyda** (poprzednia wersja, ten sam kanał) | ryby na hydrofonie 1,5 m o 16 dB ciszej niż na 30 m |
+| **Wszystkie ryby naraz, ciągle** (4 ryby, profil slope, hydrofon 10 m) | pełna mieszanka: okna 100 ms −30,9…−24,5 dB, RMS −28,5 dB, centroid ~290 Hz; same ryby: −32,0…−24,9 dB. Wahania większe niż w starym silniku (puls i oddech głosów, bąbelki) |
+| **Głębiej = niżej** (wszystkie ryby na 8 m vs 70 m, Głębia) | środek widma 283 Hz vs 110 Hz |
+| **Przedłużanie** — wybrzmiewanie po zniknięciu ryby (+0,5 / +1 / +2 s; bliskie ryby 200 m, inaczej 6 s drenażu linii opóźniających maskuje ogon) | płycizna, piasek 14 m: −3,4 / −1,6 / −16,2 dB; Głębia, muł 105 m: −8,2 / −17,2 / −35,1 dB. Piasek trzyma dźwięk ~19 dB dłużej przy +2 s |
+| **Echo od brzegu** (profil coast, dorsz 300 m od łódki, ściana ~2,7 km) | model planuje echo +3,25 s / −29 dB; zmierzone bez pogłosu: +19 dB nad drenażem (−57,3 vs −76,7 dB); **z pogłosem echo ginie w ogonie** (+0,2 dB) — do strojenia suwakami pogłos/echo |
+| **Lustro Lloyda** (tylko ryby, Głębia) | dalekie ryby labowe (700 m+): ~1 dB (1,5 m: −46,5 vs 30 m: −45,7 dB); **bliska ryba 100 m: ~10 dB** (−36,3 vs −25,9 dB). Model koherentny dalej daje ~15 dB @500 Hz, ale w audio null zakopuje multipath i szerokie pasmo głosów — dołek zależy od dystansu, nie tylko od głębokości hydrofonu. Stereo 0 vs 3 m w geometrii labu (ryby na wprost): 0,0 dB |
 | W grze z detekcją (nagranie testowe) | brzmi 5–14 ryb naraz, Doppler od ruchu ≤ 0,4 %, pogłos 2,4 s przy starcie |
 | Tło mieszkańców morza | ~240 stworzeń wokół łódki, 25–35 odezwań na 10 s (meduzy, ławice, plankton, morświny, foki) |
 | Koszt | 8 s audio (4 ryby, pełny model) renderuje się w 0,8 s na laptopie |
 
-Testy modelu: `npm test` (21 testów, m.in. geometria obrazów, znaki faz, odcięcie,
-ląd, echo od brzegu z właściwym opóźnieniem, T60, wysokość z głębokości).
+Testy modelu: `npm test` (25 testów, m.in. geometria obrazów, znaki faz, odcięcie,
+ląd, echo od brzegu z właściwym opóźnieniem, T60, wysokość z głębokości,
+mapowanie Folk→piasek, ITD z geometrii vs fala płaska).
 
 ## Uproszczenia
 
 - **Promienie proste** w każdym odcinku. Letni spadek c pod termokliną zagina dźwięk
   w dół i tworzy strefy cienia przy powierzchni — tego nie ma (następny krok: ray tracing).
+- **Osad tylko 250k i tylko detal** (Zatoka + polskie wybrzeże): pełny Bałtyk i miejsca
+  bez danych w EMODnet wracają do zgadywania z głębokości; żwir i skała liczone jak
+  piasek (twardość obcięta do 1,0).
+- **Stereo przybliżone**: ITD/ILD tylko dla drogi bezpośredniej (dokładnie) i ech
+  (fala płaska); odbicia wielokrotne dzielą ITD bezpośredniej. Pęcherzyki i ping
+  zostają mono z losową panoramą (dźwięki rozproszone).
 - **Falowód lokalnie płaski** (D = średnia na drodze); zmienność dna uwzględniamy przez
   cień na prawdziwej łamanej, odcięcie z minimum głębokości i echa od ścian.
 - **Echa: jedno odbicie od ściany**, bez ech wielokrotnych między ścianami.
@@ -230,6 +241,5 @@ ląd, echo od brzegu z właściwym opóźnieniem, T60, wysokość z głębokośc
 ## Co dalej (pomysły)
 
 - Ray tracing w profilu c(z): letnia strefa cienia przy powierzchni.
-- Osad z prawdziwych map (EMODnet Geology) zamiast zgadywania z głębokości.
-- Hydrofon stereo (dwa na wysięgnikach): różnica czasu dojścia zamiast panoramy.
 - Głębokość ryby sterowana przez człowieka (np. przysiad = zanurzenie).
+- Wejście z mikrofonu do panelu DJ (przez ten sam ChannelChain co plik/demo).

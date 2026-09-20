@@ -424,28 +424,46 @@ function frame() {
 frame();
 
 // --- API do testów i eksperymentów w konsoli --------------------------------
+/** Deterministyczny los do renderów (mulberry32) — ten sam seed = ten sam wynik.
+ *  Bez seeda render za każdym razem brzmi minimalnie inaczej (szumy, pęcherzyki). */
+function seedRandom(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 /** Renderuje N sekund offline (bez głośników) i zwraca pomiary.
- *  fishUntil: od tej chwili ryby "odpływają" — po niej widać, jak dźwięk wybrzmiewa. */
+ *  fishUntil: od tej chwili ryby "odpływają" — po niej widać, jak dźwięk wybrzmiewa.
+ *  seed: stały los (porównywalne liczby do docs); null = losowo jak w grze. */
 async function renderOffline({ depth = hydDepth, seconds = 6, seaState = engine.params.seaState, layers = {}, paths = {},
-  profileId = null, fishUntil = Infinity, params: extra = {}, raw = false } = {}) {
+  profileId = null, fishUntil = Infinity, params: extra = {}, raw = false, seed = 7 } = {}) {
   const prevProfile = profile;
   if (profileId) profile = PROFILES[profileId];
-  const sr = 44100;
-  const ctx = new OfflineAudioContext(2, sr * seconds, sr);
-  const eng = new SeaSoundEngine({ context: ctx });
-  eng.setParams({ ...JSON.parse(JSON.stringify(engine.params)), seaState, layers, paths, ...extra });
-  await eng.start();
-  const L = { ...listener(), depth: Math.min(depth, depthAt(0) - 0.5) };
-  const fl = fish.map((f) => ({ ...f, seabed: depthAt(f.x), alpha: f.on ? 1 : 0 }));
-  for (let t = 0; t < seconds; t += 0.05) {
-    const gone = t >= fishUntil;
-    eng.update({ listener: L, fish: fl.map((f) => (gone ? { ...f, state: 'leaving', alpha: 0 } : f)), env, now: t });
+  const prevRandom = Math.random;
+  if (seed !== null) Math.random = seedRandom(seed);
+  try {
+    const sr = 44100;
+    const ctx = new OfflineAudioContext(2, sr * seconds, sr);
+    const eng = new SeaSoundEngine({ context: ctx });
+    eng.setParams({ ...JSON.parse(JSON.stringify(engine.params)), seaState, layers, paths, ...extra });
+    await eng.start();
+    const L = { ...listener(), depth: Math.min(depth, depthAt(0) - 0.5) };
+    const fl = fish.map((f) => ({ ...f, seabed: depthAt(f.x), alpha: f.on ? 1 : 0 }));
+    for (let t = 0; t < seconds; t += 0.05) {
+      const gone = t >= fishUntil;
+      eng.update({ listener: L, fish: fl.map((f) => (gone ? { ...f, state: 'leaving', alpha: 0 } : f)), env, now: t });
+    }
+    const buf = await ctx.startRendering();
+    const out = { depth: L.depth, ...analyze(buf) };
+    if (raw) out.channel0 = Array.from(buf.getChannelData(0));
+    return out;
+  } finally {
+    Math.random = prevRandom;
+    profile = prevProfile;
   }
-  const buf = await ctx.startRendering();
-  profile = prevProfile;
-  const out = { depth: L.depth, ...analyze(buf) };
-  if (raw) out.channel0 = Array.from(buf.getChannelData(0));
-  return out;
 }
 
 window.soundLab = {

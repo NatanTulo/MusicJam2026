@@ -103,22 +103,57 @@ export function surfaceReflection(fHz, grazing, sigma, c) {
 }
 
 /** Osad z głębokości (uproszczenie dla Zatoki Gdańskiej): piasek na płyciznach,
- *  muł w Głębi Gdańskiej. 1 = piasek, 0 = muł. */
+ *  muł w Głębi Gdańskiej. 1 = piasek, 0 = muł. Używane tylko, gdy brak mapy
+ *  osadu (env.sedimentAt) — patrz sedimentSand(). */
 export function sandFraction(seabedDepth) {
   const t = (seabedDepth - 40) / 30;
   return 1 - Math.max(0, Math.min(1, t));
 }
 
+/** Klasyfikacja Folk (EMODnet Geology, Seabed Substrate) -> udział piasku 0..1.
+ *  folk7 ma pierwszeństwo (drobniejszy podział mułu); 6 = brak danych na tym
+ *  poziomie -> fallback do folk5; null = brak danych (wraca model z głębokości).
+ *  Ta sama tabela siedzi w scripts/fetch-sediment.mjs (importuje stąd). */
+export function folkToSand(folk7, folk5) {
+  const SAND7 = { 11: 0.0, 12: 0.25, 13: 0.5, 2: 1.0, 3: 1.0, 4: 0.6, 5: 1.0 };
+  const SAND5 = { 1: 0.15, 2: 1.0, 3: 1.0, 4: 0.55, 5: 1.0 };
+  if (folk7 !== null && folk7 !== undefined && SAND7[folk7] !== undefined) return SAND7[folk7];
+  if (folk5 !== null && folk5 !== undefined && SAND5[folk5] !== undefined) return SAND5[folk5];
+  return null;
+}
+
+/** Udział piasku w punkcie (x, y) [m, układ lokalny]: z mapy EMODnet, gdy env
+ *  ją ma (env.sedimentAt), inaczej null (= zgaduj z głębokości). Zwraca też
+ *  źródło do UI: 'mapa' albo 'model'. */
+export function sedimentSand(env, x, y) {
+  if (env && typeof env.sedimentAt === 'function') {
+    const v = env.sedimentAt(x, y);
+    if (v !== null && v !== undefined && !Number.isNaN(v)) {
+      return { sand: Math.max(0, Math.min(1, v)), source: 'mapa' };
+    }
+  }
+  return { sand: null, source: 'model' };
+}
+
+/** Nazwa osadu do UI z udziału piasku. */
+export function sedimentName(sand) {
+  if (sand === null || sand === undefined) return 'nieznany';
+  if (sand > 0.75) return 'piasek';
+  if (sand > 0.4) return 'mieszany';
+  return 'muł';
+}
+
 /** Odbicie od dna. Piasek jest "twardszy" od wody: przy płaskim kącie
  *  (poniżej kąta krytycznego ~25°) odbija prawie wszystko. Muł jest miękki
- *  i pochłania większość dźwięku. */
-export function bottomReflection(grazing, seabedDepth) {
-  const sand = sandFraction(seabedDepth);
+ *  i pochłania większość dźwięku. sand = udział piasku 0..1 z mapy (null =
+ *  zgadnij z głębokości dna — stare zachowanie). */
+export function bottomReflection(grazing, seabedDepth, sand = null) {
+  const s = sand === null || sand === undefined ? sandFraction(seabedDepth) : sand;
   const crit = (25 * Math.PI) / 180;
   const soft = 0.5 + 0.5 * Math.tanh((crit - grazing) / 0.06); // 1 poniżej kąta krytycznego
   const rSand = 0.45 + 0.4 * soft;
   const rMud = 0.18;
-  return sand * rSand + (1 - sand) * rMud;
+  return s * rSand + (1 - s) * rMud;
 }
 
 /** Dyfrakcja na krawędzi (knife-edge, ITU-R P.526): strata za wzniesieniem dna.
@@ -246,7 +281,7 @@ function bouncePolyline(src, rcv, zi, D, depthAt) {
 /** Suma obrazów w płaskim falowodzie o głębokości D (bez blokad terenu).
  *  Obraz 2nD+zs: |n| odbić od dna i |n| od powierzchni;
  *  obraz 2nD−zs: n≥1 → n od dna, n−1 od powierzchni; n≤0 → |n| od dna, |n|+1 od powierzchni. */
-export function imageArrivals(rh, D, zs, zr, freqs, { cMean, alpha, sigma, maxOrder = 6, enabled = {} }) {
+export function imageArrivals(rh, D, zs, zr, freqs, { cMean, alpha, sigma, maxOrder = 6, enabled = {}, sand = null }) {
   const on = { direct: true, surface: true, bottom: true, multi: true, ...enabled };
   const arrivals = [];
   for (let n = -maxOrder; n <= maxOrder; n++) {
@@ -263,7 +298,7 @@ export function imageArrivals(rh, D, zs, zr, freqs, { cMean, alpha, sigma, maxOr
       const dz = zi - zr;
       const r = Math.max(1, Math.hypot(rh, dz));
       const grazing = Math.atan2(Math.abs(dz), rh);
-      const rb = nb ? bottomReflection(grazing, D) : 1;
+      const rb = nb ? bottomReflection(grazing, D, sand) : 1;
       const gains = new Float64Array(freqs.length);
       let maxAbs = 0;
       for (let i = 0; i < freqs.length; i++) {
@@ -313,8 +348,12 @@ export function channel(src, rcv, env, opts = {}) {
   const sigma = seaStateInfo(seaState).sigma;
   const cutoffHz = waveguideCutoffHz(pd.min, cMean);
   const landBlocked = pd.min < 0.5;
+  // Osad bierzemy ze środka drogi (tam leży większość punktów odbicia od dna).
+  const mx = (src.x + rcv.x) / 2, my = (src.y + rcv.y) / 2;
+  const sed = sedimentSand(env, mx, my);
+  const sand = sed.sand === null ? sandFraction(Math.max(1, (depthAt(src.x, src.y) + depthAt(rcv.x, rcv.y) + pd.mean) / 3)) : sed.sand;
 
-  const arrivals = imageArrivals(rh, D, src.z, rcv.z, freqs, { cMean, alpha, sigma, maxOrder, enabled });
+  const arrivals = imageArrivals(rh, D, src.z, rcv.z, freqs, { cMean, alpha, sigma, maxOrder, enabled, sand });
   arrivals.sort((a, b) => a.delay - b.delay);
 
   // Blokady: cień liczymy na prawdziwej łamanej (z realnym dnem w punktach odbicia)
@@ -342,7 +381,7 @@ export function channel(src, rcv, env, opts = {}) {
   return {
     freqs, rh, r: Math.hypot(rh, src.z - rcv.z), bearing, cMean, D, Dmin: pd.min,
     cutoffHz, shallowLen: pd.shallowLen, landBlocked,
-    sediment: sandFraction(D) > 0.5 ? 'piasek' : 'muł',
+    sediment: sedimentName(sand), sand, sandSource: sed.source,
     arrivals,
   };
 }
@@ -475,7 +514,8 @@ export function terrainEchoes(src, rcv, scan, env, opts = {}) {
     const d1 = pathDepths(src, cnd.P, env.depthAt, 8), d2 = pathDepths(cnd.P, rcv, env.depthAt, 8);
     const Deff = Math.max(src.z + 0.5, rcv.z + 0.5, (d1.mean * d1.rh + d2.mean * d2.rh) / Math.max(1, d1.rh + d2.rh));
     const Lh = d1.rh + d2.rh;
-    const imgs = imageArrivals(Lh, Deff, src.z, rcv.z, freqs, { cMean: c, alpha, sigma, maxOrder: opts.maxOrder ?? 6 });
+    const eSand = sedimentSand(env, cnd.P.x, cnd.P.y).sand;
+    const imgs = imageArrivals(Lh, Deff, src.z, rcv.z, freqs, { cMean: c, alpha, sigma, maxOrder: opts.maxOrder ?? 6, sand: eSand });
     const o1 = segmentObstacle(src, cnd.P, env.depthAt, 14, 0.04);
     const o2 = segmentObstacle(cnd.P, rcv, env.depthAt, 14, 0.04);
     const gains = new Float64Array(freqs.length);
@@ -507,12 +547,12 @@ export function terrainEchoes(src, rcv, scan, env, opts = {}) {
  * Szorstka powierzchnia skraca pogłos wysokich tonów. Do tego "trzepotanie":
  * odbicia pionowe dno–powierzchnia co 2D/c (w płytkiej wodzie wyraźne powtórzenia).
  */
-export function waterColumnReverb(D, seaState = 2, profile = BALTIC_SUMMER) {
+export function waterColumnReverb(D, seaState = 2, profile = BALTIC_SUMMER, sand = null) {
   const d = Math.max(3, D);
   const c = soundSpeedAt(d / 2, profile);
   const theta = (12 * Math.PI) / 180;
   const sigma = seaStateInfo(seaState).sigma;
-  const rb = bottomReflection(theta, d);
+  const rb = bottomReflection(theta, d, sand);
   const rsLow = Math.abs(surfaceReflection(500, theta, sigma, c));
   const rsHigh = Math.abs(surfaceReflection(4000, theta, sigma, c));
   const dtPair = (2 * d) / (c * Math.sin(theta));
@@ -521,6 +561,34 @@ export function waterColumnReverb(D, seaState = 2, profile = BALTIC_SUMMER) {
   const t60 = Math.min(5, Math.max(0.6, (60 * dtPair) / lossLow));
   const t60High = Math.min(t60, Math.max(0.25, (60 * dtPair) / lossHigh));
   const flutterPeriod = (2 * d) / c;
-  const flutterGain = bottomReflection(Math.PI / 2, d) * Math.abs(surfaceReflection(500, Math.PI / 2, sigma, c));
+  const flutterGain = bottomReflection(Math.PI / 2, d, sand) * Math.abs(surfaceReflection(500, Math.PI / 2, sigma, c));
   return { t60, t60High, flutterPeriod, flutterGain, dtPair, rb, lossLow, depth: d };
+}
+
+// ---------------------------------------------------------------------------
+// 4. Hydrofon stereo: dwa odbiorniki zamiast sztucznej panoramy
+// ---------------------------------------------------------------------------
+/** Wskazówki przestrzenne z geometrii dwóch uszu (układ lokalny: x = wschód,
+ *  y = północ, z = głębokość; heading jak kurs łódki: 0 = północ, z zegarem).
+ *  baseline [m] = rozstaw uszu (prostopadle do kursu). Zwraca:
+ *  itd [s] = opóźnienie prawego względem lewego (+ = źródło z lewej),
+ *  ildDb [dB] = lewy minus prawy (+ = lewy głośniej),
+ *  rL, rR — odległości do uszu (do diagnostyki/UI). */
+export function stereoCues(src, listener, baseline = 3, c = 1450) {
+  const h = listener.heading ?? 0;
+  const px = Math.cos(h), py = -Math.sin(h);   // wersor prawej burty
+  const half = Math.max(0, baseline) / 2;
+  const rL = Math.hypot(src.x - (listener.x - px * half), src.y - (listener.y - py * half), src.z - listener.depth);
+  const rR = Math.hypot(src.x - (listener.x + px * half), src.y - (listener.y + py * half), src.z - listener.depth);
+  return {
+    itd: (rR - rL) / c,
+    ildDb: 20 * Math.log10(Math.max(1e-9, rR) / Math.max(1e-9, rL)),
+    rL, rR,
+  };
+}
+
+/** ITD fali płaskiej z kierunku bearing (ten sam konwencja co stereoCues).
+ *  Dla dalekich źródeł i ech (ściany w km) — dokładne bez liczenia odległości. */
+export function planeWaveITD(bearing, heading = 0, baseline = 3, c = 1450) {
+  return (-Math.max(0, baseline) * Math.sin(bearing - heading)) / c;
 }

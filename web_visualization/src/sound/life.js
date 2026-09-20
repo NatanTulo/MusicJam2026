@@ -10,6 +10,7 @@
 // Momenty odezwania się są wyrównane do siatki ósemek — tło ma puls; to opóźnienie
 // w wodzie rozsuwa je potem w czasie (dalsze stworzenia "spóźniają się").
 import { fishMidi, midiToHz, quantizeToMode } from './music.js';
+import { createStereoOut } from './engine.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -233,9 +234,9 @@ export class LifeSound {
     const hp = keep(ctx.createBiquadFilter());
     hp.type = 'highpass';
     hp.frequency.value = Math.min(4000, Math.max(20, plan.cutoffHz));
-    const pan = keep(ctx.createStereoPanner());
-    pan.pan.value = plan.pan;
-    hp.connect(pan).connect(eng.nodes.lifeBus);
+    const st = createStereoOut(ctx, eng.nodes.lifeBus, keep);
+    st.set(te, plan);
+    hp.connect(st.input);
     let pending = 0, last = te;
     const play = (at, gain, cutoff, out) => {
       const s = keep(ctx.createBufferSource());
@@ -253,10 +254,9 @@ export class LifeSound {
     };
     for (const tp of plan.taps) play(te + plan.main + tp.extra, tp.gain * level, tp.cutoff, hp);
     for (const e of plan.echoes) {
-      const ep = keep(ctx.createStereoPanner());
-      ep.pan.value = e.pan;
-      ep.connect(eng.nodes.lifeBus);
-      play(te + plan.main + e.extra, e.gain * level, e.cutoff, ep);
+      const est = createStereoOut(ctx, eng.nodes.lifeBus, keep);
+      est.set(te, e);
+      play(te + plan.main + e.extra, e.gain * level, e.cutoff, est.input);
     }
     if (plan.tail > 0) play(te + plan.main, plan.tail * level, plan.tailCutoff ?? 16000, eng.nodes.revIn);
   }

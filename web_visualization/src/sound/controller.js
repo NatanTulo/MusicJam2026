@@ -31,13 +31,15 @@ export class SoundController {
   }
 
   _bindUi() {
-    const { toggle, depth, seaState, life } = this.ui;
+    const { toggle, depth, seaState, life, stereo } = this.ui;
     toggle?.addEventListener('click', () => this.toggle());
     life?.addEventListener('input', () => this.engine.setParams({ life: +life.value }));
     depth?.addEventListener('input', () => { this.wantedDepth = parseFloat(depth.value); });
     seaState?.addEventListener('input', () => this.engine.setParams({ seaState: parseInt(seaState.value, 10) }));
+    stereo?.addEventListener('input', () => this.engine.setParams({ baseline: parseFloat(stereo.value) }));
     if (depth) this.wantedDepth = parseFloat(depth.value);
     if (seaState) this.engine.setParams({ seaState: parseInt(seaState.value, 10) });
+    if (stereo) this.engine.setParams({ baseline: parseFloat(stereo.value) });
     addEventListener('keydown', (e) => {
       if (e.code === 'KeyQ') this.nudge(-2);
       if (e.code === 'KeyE') this.nudge(2);
@@ -79,9 +81,13 @@ export class SoundController {
     if (this.engine.running) {
       // Wszystko w metrach względem łódki: x = wschód, y = północ.
       const mPerDegLon = M_PER_DEG_LAT * Math.cos((state.lat * Math.PI) / 180);
+      const toLatLon = (px, py) => ({
+        lat: state.lat + py / M_PER_DEG_LAT, lon: state.lon + px / mPerDegLon,
+      });
       const env = {
         profile: BALTIC_SUMMER,
-        depthAt: (px, py) => grid.depthAt(state.lat + py / M_PER_DEG_LAT, state.lon + px / mPerDegLon),
+        depthAt: (px, py) => { const { lat, lon } = toLatLon(px, py); return grid.depthAt(lat, lon); },
+        sedimentAt: (px, py) => { const { lat, lon } = toLatLon(px, py); return grid.sedimentAt(lat, lon); },
       };
       const toLocal = (o) => ({ ...o, x: (o.lon - state.lon) * mPerDegLon, y: (o.lat - state.lat) * M_PER_DEG_LAT });
       const local = fish.map(toLocal);
@@ -100,8 +106,9 @@ export class SoundController {
   }
 
   _updateUi() {
-    const { depthVal, info, badge } = this.ui;
+    const { depthVal, info, badge, stereoVal } = this.ui;
     if (depthVal) depthVal.textContent = this.depth.toFixed(1);
+    if (stereoVal) stereoVal.textContent = `${(+this.engine.params.baseline).toFixed(1)} m`;
     if (badge) {
       badge.style.display = 'inline-block';
       badge.textContent = this.engine.running ? 'gra' : 'wył.';
@@ -122,10 +129,12 @@ export class SoundController {
     info.innerHTML = [
       `Skala: <strong>${i.mode?.name ?? '—'}</strong> (${i.mode?.mood ?? ''})`,
       `Woda przy hydrofonie: ${l.temperature.toFixed(1)}°C, ${l.salinity.toFixed(1)} PSU, c = ${l.c.toFixed(0)} m/s`,
+      `Dno pod łódką: ${l.sediment ?? '—'} (${l.sandSource === 'mapa' ? 'EMODnet' : 'zgadywanie z głębokości'}) · uszy: ${(+this.engine.params.baseline).toFixed(1)} m`,
       `Pogłos: ${rv ? rv.t60.toFixed(1) : '—'} s · trzepotanie co ${rv ? (rv.flutterPeriod * 1000).toFixed(0) : '—'} ms · ściany w zasięgu: ${i.reflectors}`,
       `Brzmi ryb: ${voiced.length}/${i.fish.length}${blocked ? ` · za lądem: ${blocked}` : ''} · morze: ${i.sea.name}`,
       top ? `Najgłośniej: #${top.id} ${top.species} ${top.note} (${top.hz.toFixed(0)} Hz, ${top.depth.toFixed(0)} m), `
-        + `${(top.dist / 1000).toFixed(2)} km, ${(top.delay * 1000).toFixed(0)} ms, Doppler ${(top.doppler * 100).toFixed(1)} %` : 'Brak ryb w zasięgu.',
+        + `${(top.dist / 1000).toFixed(2)} km, ${(top.delay * 1000).toFixed(0)} ms, Doppler ${(top.doppler * 100).toFixed(1)} %`
+        + (top.itdMs !== undefined ? `, ITD ${top.itdMs.toFixed(2)} ms` : '') : 'Brak ryb w zasięgu.',
       `Tło (zdarzeń / 10 s): ${Object.entries(i.life || {}).map(([k, n]) => `${LIFE_NAMES[k] ?? k} ${n}`).join(' · ') || '—'}`,
       echo ? `Echo od terenu: #${echo.id} od ${echo.label}u ${(echo.range / 1000).toFixed(1)} km, po ${(echo.delay).toFixed(2)} s` : 'Echo od terenu: brak (brak ścian w zasięgu)',
     ].join('<br>');

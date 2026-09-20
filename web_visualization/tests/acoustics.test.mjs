@@ -7,6 +7,8 @@ import {
   bottomReflection, knifeEdgeLossDb, orbitalDecay, BALTIC_SUMMER,
   channel, coherentLevelDb, gainAt, fitTap, waveguideCutoffHz, evanescentLossDb,
   scanReflectors, terrainEchoes, waterColumnReverb,
+  folkToSand, sedimentSand, sedimentName, sandFraction,
+  stereoCues, planeWaveITD,
 } from '../src/sound/acoustics.js';
 import { depthMidi, fishMidi, MODES } from '../src/sound/music.js';
 
@@ -179,4 +181,67 @@ test('profil Bałtyku: termoklina i haloklina we właściwych miejscach', () => 
   near(BALTIC_SUMMER.temperature(0), 17, 0.2);
   near(BALTIC_SUMMER.temperature(40), 5.1, 0.3);
   assert.ok(BALTIC_SUMMER.salinity(90) > 11);
+});
+
+test('osad: Folk z EMODnet mapuje się na piasek, brak danych wraca do modelu', () => {
+  assert.equal(folkToSand(13, 1), 0.5);      // muddy Sand (7cl wygrywa z 5cl)
+  assert.equal(folkToSand(11, 2), 0.0);      // muł
+  assert.equal(folkToSand(2, null), 1.0);    // piasek
+  assert.equal(folkToSand(6, 1), 0.15);      // "no data" na 7cl -> fallback do 5cl
+  assert.equal(folkToSand(6, null), null);   // brak danych -> model z głębokości
+  assert.equal(folkToSand(null, null), null);
+  assert.equal(sedimentName(0.9), 'piasek');
+  assert.equal(sedimentName(0.5), 'mieszany');
+  assert.equal(sedimentName(0.1), 'muł');
+  const map = sedimentSand({ sedimentAt: () => 0.8 }, 0, 0);
+  assert.equal(map.source, 'mapa');
+  near(map.sand, 0.8, 1e-9);
+  const model = sedimentSand({ depthAt: () => 60 }, 0, 0);
+  assert.equal(model.source, 'model');
+  assert.equal(model.sand, null);
+});
+
+test('osad z mapy przebija zgadywanie: to samo D, inne dno', () => {
+  // głęboka woda (model mówi muł), ale mapa mówi piasek — odbicie jak na płyciznie
+  assert.ok(bottomReflection(0.1, 100, 1.0) > 0.8);
+  assert.ok(bottomReflection(0.1, 20, 0.0) < 0.25);
+  const env = (sand) => ({ depthAt: () => 60, sedimentAt: () => sand });
+  const fish = { x: 1500, y: 0, z: 30 }, hyd = { x: 0, y: 0, z: 25 };
+  const chSand = channel(fish, hyd, env(1.0));
+  const chMud = channel(fish, hyd, env(0.0));
+  assert.equal(chSand.sandSource, 'mapa');
+  assert.equal(chSand.sediment, 'piasek');
+  assert.equal(chMud.sediment, 'muł');
+  const g = (ch) => gainAt(ch.freqs, ch.arrivals.find((a) => a.kind === 'bottom').gains, 2000);
+  assert.ok(g(chSand) > g(chMud) * 1.5, 'piasek niesie górę lepiej niż muł');
+  const chModel = channel(fish, hyd, { depthAt: () => 60 });
+  assert.equal(chModel.sandSource, 'model');   // stara ścieżka działa bez mapy
+  near(chModel.sand, sandFraction(60), 1e-9);
+  assert.ok(waterColumnReverb(60, 2, BALTIC_SUMMER, 1.0).t60
+    > waterColumnReverb(60, 2, BALTIC_SUMMER, 0.0).t60 + 0.5, 'pogłos zależy od osadu, nie tylko D');
+});
+
+test('stereo: z przodu ITD=0, z boku ±baseline/c, znak poprawny', () => {
+  const L = { x: 0, y: 0, depth: 10, heading: 0 };
+  const front = stereoCues({ x: 0, y: 1000, z: 10 }, L, 3, 1450);
+  near(front.itd, 0, 1e-9);
+  near(front.ildDb, 0, 1e-9);
+  const right = stereoCues({ x: 1000, y: 0, z: 10 }, L, 3, 1450);
+  near(right.itd, -3 / 1450, 1e-6);   // prawa burta: prawe ucho wcześniej
+  assert.ok(right.ildDb < 0, 'prawe głośniej');
+  const left = stereoCues({ x: -1000, y: 0, z: 10 }, L, 3, 1450);
+  near(left.itd, 3 / 1450, 1e-6);
+  assert.ok(left.ildDb > 0, 'lewe głośniej');
+  const mono = stereoCues({ x: 1000, y: 0, z: 10 }, L, 0, 1450);
+  near(mono.itd, 0, 1e-12);           // baseline 0 = mono
+});
+
+test('stereo: fala płaska zgadza się ze sferyczną dla dalekich źródeł', () => {
+  near(planeWaveITD(Math.PI / 2, 0, 3, 1450), -3 / 1450, 1e-12);
+  near(planeWaveITD(0, 0, 3, 1450), 0, 1e-12);
+  const L = { x: 0, y: 0, depth: 10, heading: 0.7 };
+  const far = stereoCues({ x: 3000, y: 1000, z: 10 }, L, 3, 1450);
+  const bearing = Math.atan2(3000 - 0, 1000 - 0);
+  const pw = planeWaveITD(bearing, 0.7, 3, 1450);
+  assert.ok(Math.abs(far.itd - pw) / Math.max(1e-9, Math.abs(pw)) < 0.05, `${far.itd} vs ${pw}`);
 });
