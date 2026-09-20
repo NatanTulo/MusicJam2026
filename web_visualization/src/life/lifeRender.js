@@ -51,8 +51,8 @@ export class LifeRenderer {
       const arr = pts.geometry.attributes.position.array;
       const i = counts[it.kind]++;
       if (i * 3 + 2 >= arr.length) continue;
-      const { x, z } = grid.latLonToWorld(it.lat, it.lon);
-      arr[i * 3] = x; arr[i * 3 + 1] = -it.depth * VEX; arr[i * 3 + 2] = z;
+      const p = grid.latLonToWorld(it.lat, it.lon, -it.depth * VEX);
+      arr[i * 3] = p.x; arr[i * 3 + 1] = p.y; arr[i * 3 + 2] = p.z;
     }
     for (const [kind, pts] of Object.entries(this.layers)) {
       pts.geometry.setDrawRange(0, counts[kind]);

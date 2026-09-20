@@ -158,19 +158,25 @@ export class DjPanel {
     if (this.pos) {
       const seabed = grid.depthAt(this.pos.lat, this.pos.lon);
       this.depth = Math.max(0.5, Math.min(this.wantedDepth, seabed - 0.5));
-      const { x, z } = grid.latLonToWorld(this.pos.lat, this.pos.lon);
-      const y = -this.depth * VEX;
-      const dist = camera.position.distanceTo(new THREE.Vector3(x, y, z));
+      // Pozycje na sferze: głośnik pod wodą, lina i pierścień przy powierzchni
+      // wzdłuż normalnej do niej (patrz fishRender).
+      const p = grid.latLonToWorld(this.pos.lat, this.pos.lon, -this.depth * VEX);
+      const surf = grid.latLonToWorld(this.pos.lat, this.pos.lon, 0);
+      const n = grid.normalAt(this.pos.lat, this.pos.lon);
+      const dist = camera.position.distanceTo(p);
       const s = Math.min(3000, Math.max(12, dist * 0.02));
-      this.ball.position.set(x, y, z);
+      this.ball.position.set(p.x, p.y, p.z);
       this.ball.scale.setScalar(s * (this.playing ? 1 + 0.15 * Math.sin(t * 12.6) : 1));   // pulsuje w rytmie
       const pos = this.line.geometry.attributes.position;
-      pos.setXYZ(0, x, 1, z); pos.setXYZ(1, x, y, z); pos.needsUpdate = true;
-      this.ring.position.set(x, 1.3, z);
+      pos.setXYZ(0, surf.x + n.x, surf.y + n.y, surf.z + n.z);
+      pos.setXYZ(1, p.x, p.y, p.z);
+      pos.needsUpdate = true;
+      this.ring.position.set(surf.x + n.x * 1.3, surf.y + n.y * 1.3, surf.z + n.z * 1.3);
       this.ring.scale.setScalar(s * 1.6);
       const w = Math.max(50, camera.position.distanceTo(this.ring.position) * 0.07);
+      const h = s * 2 + w * 0.2;
       this.label.scale.set(w, w / 4, 1);
-      this.label.position.set(x, s * 2 + w * 0.2, z);
+      this.label.position.set(surf.x + n.x * h, surf.y + n.y * h, surf.z + n.z * h);
     }
     if (t - (this._lastUi ?? -1) > 0.25) { this._lastUi = t; this._ui(); }
   }

@@ -10,7 +10,7 @@
     "fetch:data": "node scripts/fetch-bathymetry.mjs",
     "fetch:fullres": "node scripts/build-fullres.mjs",
     "fetch:borders": "node scripts/extract-borders.mjs",
-    "test": "node --test tests/"
+    "test": "node --test tests/*.test.mjs"
   },
   "keywords": [],
   "author": "",
