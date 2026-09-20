@@ -12,7 +12,7 @@
 // Parametry kanału liczone ~8×/s, w audio przejścia są płynne. Można podać
 // OfflineAudioContext — wtedy renderuje do bufora (testy, pomiary).
 import {
-  channel, terrainEchoes, scanReflectors, waterColumnReverb, fitTap, gainAt, FREQ_GRID,
+  channel, terrainEchoes, scanReflectors, waterColumnReverb, fitTap, gainAt, FREQ_GRID, waveguideCutoffHz,
   seaStateInfo, orbitalDecay, soundSpeedAt, bottomReflection, BALTIC_SUMMER,
   stereoCues, planeWaveITD, sedimentSand, sedimentName,
 } from './acoustics.js';
@@ -30,6 +30,15 @@ export const DEFAULT_PARAMS = {
   // Ryby pływają realistycznie (~1-2 m/s), więc prawdziwy Doppler jest znikomy;
   // limit jest siatką bezpieczeństwa na duże skoki (np. teleport za łódką).
   doppler: 0.02,
+  // Ryby pływają po mapie setki m/s, żeby nadążyć za człowiekiem w kadrze.
+  // Przy takim tempie opóźnienie do hydrofonu zmienia się szybciej, niż pozwala
+  // limit Dopplera — każdy głos jest wtedy stale przestrojony o ~2 % w losową
+  // stronę i z kilkunastu robi się mętny gul. Dlatego OPÓŹNIENIE (czyli Doppler)
+  // liczymy z wolniejszej, "dźwiękowej" pozycji, a głośność, kierunek i barwę
+  // z prawdziwej — dźwięk nadal reaguje na ruch człowieka natychmiast.
+  acousticSpeed: 8,       // [m/s] jak szybko dźwiękowa pozycja goni wizualną (Doppler ≤ 0,55 %)
+  acousticDepthRate: 2.5, // [m/s] to samo w pionie
+  motion: 0.45,           // ile z pobudzenia człowieka słychać (głośność, jasność, puls)
   maxVoices: 14,          // ile ryb brzmi naraz (najgłośniejsze); reszta i tak ginie w szumie
   maxOrder: 6,            // najwyższy rząd odbić w modelu kanału
   baseline: 3,            // [m] rozstaw uszu hydrofonu stereo (0 = mono, wtedy wraca panorama)
@@ -126,6 +135,7 @@ class ChannelChain {
     this.hp.connect(this.tailLp).connect(this.tail).connect(n.revIn);
     this.mainCur = null;
     this.doppler = 0;
+    this.jumps = 0;        // ile razy trzeba było przeskoczyć opóźnienie (= ile "dziur" w dźwięku)
   }
 
   /** Płynna zmiana opóźnienia z ograniczeniem szybkości (= ograniczony Doppler).
@@ -160,6 +170,7 @@ class ChannelChain {
     // duży skok (przestawiony głośnik, ryba "dogoniona" po długim ruchu): krótkie wyciszenie
     // i przeskok zamiast minut "zjeżdżania" z ograniczonym Dopplerem
     const jump = prev !== null && Math.abs(target - prev) > 0.5;
+    if (jump) this.jumps++;
     this.mainCur = this._slide(this.main.delayTime, this.mainCur, target, now, dt, rate, jump ? this.input.gain : null, 1);
     this.doppler = prev === null || jump ? 0 : -((this.mainCur - prev) / dt);
     this.taps.forEach((t, i) => {
@@ -322,6 +333,7 @@ export class SeaSoundEngine {
     this._lastUpdate = null;
     this._scan = null;
     this._scanKey = null;
+    this._acousticPos = new Map();   // id ryby -> wolniejsza, "dźwiękowa" pozycja
     this._reverbKey = null;
     this._plans = [];
   }
@@ -742,7 +754,7 @@ export class SeaSoundEngine {
     const tail = Math.sqrt(tailE) + 0.05 * directG;   // + trochę rozpraszania objętościowego
     const loud = Math.max(...taps.map((t) => Math.abs(t.gain)), ...echoes.map((e) => Math.abs(e.gain)), tail, 0);
     return {
-      main, taps, echoes, tail, tailCutoff, loud,
+      main, taps, echoes, tail, tailCutoff, loud, cMean: ch.cMean,
       itd: cues.itd, ildDb: cues.ildDb,
       pan: Math.sin(ch.bearing - (listener.heading ?? 0)) * 0.85,
       cutoffHz: ch.cutoffHz, landBlocked: ch.landBlocked,
@@ -750,21 +762,63 @@ export class SeaSoundEngine {
     };
   }
 
-  _plan(f, listener, env, scan) {
+  /** Pozycja, którą "słyszy" model: goni wizualną z ograniczoną prędkością.
+   *  Dzięki temu ryba może śmigać po mapie, a dźwięk zmienia się płynnie. */
+  _acoustic(f, dt) {
+    let a = this._acousticPos.get(f.id);
+    if (!a) {
+      a = { x: f.x, y: f.y, depth: f.depth, exc: f.excitement ?? 0 };
+      this._acousticPos.set(f.id, a);
+      return a;
+    }
+    const dx = f.x - a.x, dy = f.y - a.y;
+    const d = Math.hypot(dx, dy);
+    // Im dalej dźwiękowa pozycja została w tyle, tym szybciej nadrabia — płynnie,
+    // bez przeskoku. Twardy przeskok robił dziurę w dźwięku co kilka sekund pogoni.
+    const speed = this.params.acousticSpeed * (1 + Math.min(1, d / 800));   // najwyżej 2× (≈1 % przestrojenia)
+    const step = speed * Math.max(0.01, dt);
+    if (d > 3000) { a.x = f.x; a.y = f.y; }          // teleport łowiska — nie ma czego gonić
+    else if (d > step) { a.x += (dx / d) * step; a.y += (dy / d) * step; }
+    else { a.x = f.x; a.y = f.y; }
+    const mz = this.params.acousticDepthRate * Math.max(0.01, dt);
+    a.depth += Math.max(-mz, Math.min(mz, f.depth - a.depth));
+    a.exc += ((f.excitement ?? 0) - a.exc) * Math.min(1, dt / 1.5);
+    return a;
+  }
+
+  /** Odcięcie falowodu dla drogi źródło -> hydrofon (tanio: 3 punkty zamiast 16).
+   *  Decyduje najpłytsze miejsce na drodze, nie głębokość źródła. */
+  placeCutoffHz(src, listener, env) {
+    const d = Math.min(
+      env.depthAt(src.x, src.y),
+      env.depthAt(listener.x, listener.y),
+      env.depthAt((src.x + listener.x) / 2, (src.y + listener.y) / 2),
+    );
+    return waveguideCutoffHz(d, 1450);
+  }
+
+  _plan(f, listener, env, scan, dt = CHANNEL_DT) {
     const sp = SPECIES_BY_ID[f.species];
-    const midi = fishMidi(f.depth, this.mode);
+    const slow = this._acoustic(f, dt);
+    // fizyczna podłoga wysokości: płytka woda po drodze nie przeniesie niskich tonów
+    const minHz = this.placeCutoffHz(f, listener, env) * 1.35;
+    const midi = fishMidi(f.depth, this.mode, minHz);
     const f0 = midiToHz(midi);
     const fRef = Math.max(f0 * 1.5, 90);   // barwa ryby leży głównie w 1.–3. harmonicznej
     const cp = this._channelPlan({ x: f.x, y: f.y, z: f.depth }, listener, env, scan, fRef);
+    // Opóźnienie (a więc Doppler) z wolniejszej pozycji; odstępy między drogami
+    // i echami zostają względne, więc cała wiązka przesuwa się razem.
+    cp.main = Math.hypot(slow.x - listener.x, slow.y - listener.y, slow.depth - listener.depth) / cp.cMean;
     const alpha = f.state === 'leaving' ? 0 : Math.min(1, f.alpha ?? 1);
-    const level = sp.voice.level * alpha * (0.55 + 0.7 * (f.excitement ?? 0));
+    const exc = slow.exc * this.params.motion;       // ruch słychać, ale delikatniej
+    const level = sp.voice.level * alpha * (0.7 + 0.6 * exc);
     // odcięcie płytkiej wody: podstawowa ryby poniżej f_c nie przejdzie — zostają harmoniczne
     const partialsPass = sp.voice.partials.map((a, i) => (f0 * (i + 1) >= cp.cutoffHz ? a : 0)).reduce((s2, v) => s2 + v, 0);
     const passFrac = partialsPass / sp.voice.partials.reduce((s2, v) => s2 + v, 0);
     return {
       ...cp,
       id: f.id, species: sp.name, speciesId: f.species, depth: f.depth, midi, f0, note: noteName(midi),
-      level, excitement: f.excitement ?? 0, bright: sp.voice.bright * (0.7 + 0.8 * (f.excitement ?? 0)),
+      level, excitement: exc, bright: sp.voice.bright * (0.85 + 0.6 * exc),
       tail: cp.tail * level > 0 ? cp.tail : 0,
       priorityDb: dB(cp.loud * level * Math.max(passFrac, 1e-3)),
     };
@@ -776,7 +830,7 @@ export class SeaSoundEngine {
     if (this.params.layers.fish) {
       for (const f of fish) {
         if ((f.alpha ?? 1) < 0.02 && !this.voices.has(f.id)) continue;
-        const p = this._plan(f, listener, env, scan);
+        const p = this._plan(f, listener, env, scan, dt);
         if (p.main > MAX_MAIN_DELAY * 0.97) continue;   // za daleko
         plans.push(p);
       }
@@ -795,6 +849,10 @@ export class SeaSoundEngine {
       if (!v) { v = new FishVoice(this, fish.find((f) => f.id === p.id), now); this.voices.set(p.id, v); }
       v.apply(p, now, dt, rate);
       p.doppler = v.doppler;
+    }
+    if (this._acousticPos.size > fish.length + 8) {
+      const alive = new Set(fish.map((f) => f.id));
+      for (const id of this._acousticPos.keys()) if (!alive.has(id)) this._acousticPos.delete(id);
     }
     this._plans = plans;
   }
@@ -860,6 +918,7 @@ export class SeaSoundEngine {
       fish: rows,
       mode: this.mode,
       voices: this.voices.size,
+      jumps: [...this.voices.values()].reduce((n, v) => n + (v.chain?.jumps ?? 0), 0),
       life: this.lifeSound?.stats() ?? {},
       music: this.musicInfo,
       reverb: rv,

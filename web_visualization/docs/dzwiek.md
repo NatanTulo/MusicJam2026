@@ -25,11 +25,11 @@ widmo). W grze: panel „Dźwięk — hydrofon”, klawisze `Q`/`E`.
 
 | Cecha | Z czego | Wzór / wartość |
 |---|---|---|
-| **Wysokość** | głębokość ryby z | f₀ = 494 Hz · 2^(−z / 30 m), przyciągnięta do najbliższego dźwięku skali, z płynnym glissandem. 0 m ≈ H4 494 Hz · 15 m ≈ F4 349 Hz · 30 m ≈ H3 247 Hz · 60 m ≈ H2 123 Hz · ≥ 82 m → D2 73 Hz |
+| **Wysokość** | głębokość ryby z | f₀ = 659 Hz · 2^(−z / 34 m), przyciągnięta do najbliższego dźwięku skali, z płynnym glissandem. 0 m ≈ E5 659 Hz · 15 m ≈ H4 494 Hz · 34 m ≈ E4 330 Hz · 64 m ≈ F#3 185 Hz · ≥ 100 m → D3 147 Hz. **Dolna granica jest fizyczna**: nigdy poniżej odcięcia falowodu na drodze do hydrofonu (×1,35 zapasu) — nad 1,5-metrową mielizną ta sama 60-metrowa ryba musi zagrać 740 Hz zamiast 185 Hz, bo niżej i tak by nie doszła |
 | **Skala** | dno pod łódką | < 35 m pentatonika durowa, 35–75 m heksatonika durowa, > 75 m skala yo (tonika D) — wszystkie jasne |
 | **Barwa** | gatunek | harmoniczne: szprot jasny, śledź fletowy, dorsz „chrząka” (bogate harmoniczne + puls 3 Hz), flądra miękki dron |
 | **Puls i oddech** | gatunek + ruch | modulacja amplitudy (puls 0,8–7,5 Hz, szybszy przy ruchu) i powolne „oddychanie” 0,05–0,13 Hz — żeby ciągły dźwięk żył |
-| **Głośność, jasność** | ruch człowieka (`excitement`) | poziom × (0,55 + 0,7·e), filtr barwy f₀ × jasność × (0,7 + 0,8·e) |
+| **Głośność, jasność** | ruch człowieka (`excitement`) | e liczone z 45 % pobudzenia i wygładzone (1,5 s): poziom × (0,7 + 0,6·e), filtr barwy f₀ × jasność × (0,85 + 0,6·e). Ruch słychać, ale nie szarpie |
 
 ## 2. Kanał: metoda źródeł pozornych
 
@@ -67,6 +67,23 @@ Drogi przychodzą gęsto (dziesiątki ms rozrzutu) i **sumują się w audio napr
 z fazami**. Stąd bez osobnego kodu biorą się: wzmocnienie w płytkiej wodzie
 (energia uwięziona między dnem a powierzchnią), filtr grzebieniowy
 i **lustro Lloyda** (tuż pod powierzchnią dźwięk bezpośredni i odbity w przeciwfazie się znoszą).
+
+### Szybkie ryby, spokojny dźwięk
+
+Ryby pływają po mapie 131–316 m/s, żeby nadążyć za człowiekiem w kadrze. Przy takim
+tempie opóźnienie do hydrofonu zmieniałoby się o ~9 % na sekundę — limit Dopplera
+(2 %) byłby wtedy stale nasycony, każdy głos przestrojony w losową stronę,
+a z kilkunastu robił się mętny gul (plus dziury po przeskokach opóźnienia).
+
+Dlatego **opóźnienie liczymy z wolniejszej, „dźwiękowej" pozycji ryby** (8 m/s, przy
+dużym dystansie do 2× szybciej), a **głośność, kierunek, barwę i wysokość z prawdziwej** —
+dźwięk reaguje na ruch człowieka natychmiast, tylko nie przestraja się przy tym.
+Zmierzone (jedna ryba, 24 s, porównanie w silniku):
+
+| Scenariusz | Z ograniczeniem | Bez (dawniej) |
+|---|---|---|
+| kilka kroków i postój | przestrojenie śr. 0,36 %, maks 0,83 %, nigdy na limicie | maks 4 %, na limicie 13 % czasu |
+| bieg bez przerwy | śr. 0,97 %, maks 2,1 %, 0 dziur | śr. 4,1 %, na limicie 83 % czasu, 1 dziura |
 
 ### Kiedy dźwięk nie dociera wcale
 

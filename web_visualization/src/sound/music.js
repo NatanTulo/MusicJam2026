@@ -39,10 +39,12 @@ export function noteName(midi) {
 // ---------------------------------------------------------------------------
 // Wysokość z głębokości: im głębiej, tym niżej
 // ---------------------------------------------------------------------------
-/** Powierzchnia = H4 (~494 Hz), oktawa niżej co 30 m wody, najniżej D2 (~73 Hz).
- *  Przykład: 15 m ≈ 349 Hz, 30 m ≈ 247 Hz, 60 m ≈ 123 Hz, 100 m → 73 Hz.
- *  Ryba przy dnie Głębi Gdańskiej mruczy, szprot przy powierzchni śpiewa wysoko. */
-export const PITCH = { surfaceMidi: 71, metersPerOctave: 30, minMidi: 38 };
+/** Powierzchnia = E5 (~659 Hz), oktawa niżej co 34 m wody, nie niżej niż D3 (~147 Hz).
+ *  Przykład: 15 m ≈ 494 Hz, 34 m ≈ 330 Hz, 64 m ≈ 185 Hz, 100 m → 147 Hz.
+ *  Rejestr podniesiony (było D2 73 Hz przy dnie): przy kilkunastu ciągłych głosach
+ *  najniższe dudnienia zlewały się w mętny gul, a prawdziwe odgłosy ryb i tak
+ *  leżą głównie w 100–1000 Hz (dorsz „chrząka” 50–500 Hz). */
+export const PITCH = { surfaceMidi: 76, metersPerOctave: 34, minMidi: 50 };
 
 export function depthMidi(depth) {
   return Math.max(PITCH.minMidi, PITCH.surfaceMidi - (12 * Math.max(0, depth)) / PITCH.metersPerOctave);
@@ -64,6 +66,23 @@ export function quantizeToMode(midi, mode) {
   return Math.max(PITCH.minMidi, best);
 }
 
-export function fishMidi(depth, mode) {
-  return quantizeToMode(depthMidi(depth), mode);
+/** Wysokość ryby: z głębokości (głębiej = niżej), ale nie niżej, niż niesie woda.
+ *
+ *  `minHz` to fizyczna podłoga miejsca: płytka woda nie przenosi długich fal
+ *  (odcięcie falowodu, patrz acoustics.waveguideCutoffHz). Ryba nad 5-metrową
+ *  mielizną nie może brzmieć nisko — nie dlatego, że tak chcemy, tylko dlatego,
+ *  że taki dźwięk by stamtąd nie doszedł. Nad Głębią Gdańską podłoga znika
+ *  i te same ryby mogą mruczeć. Całe stado podnosi się więc, gdy łódka wpływa
+ *  na płyciznę, i opada nad głębią. */
+export function fishMidi(depth, mode, minHz = 0) {
+  let m = quantizeToMode(depthMidi(depth), mode);
+  if (minHz > 0) {
+    let guard = 0;
+    while (midiToHz(m) < minHz && guard++ < 48) {
+      let next = m + 1;
+      while (quantizeToMode(next, mode) !== next) next++;
+      m = next;
+    }
+  }
+  return m;
 }

@@ -10,7 +10,7 @@ import {
   folkToSand, sedimentSand, sedimentName, sandFraction,
   stereoCues, planeWaveITD,
 } from '../src/sound/acoustics.js';
-import { depthMidi, fishMidi, MODES } from '../src/sound/music.js';
+import { depthMidi, fishMidi, midiToHz, PITCH, MODES } from '../src/sound/music.js';
 
 const near = (a, b, tol) => assert.ok(Math.abs(a - b) <= tol, `${a} != ${b} ±${tol}`);
 
@@ -160,15 +160,31 @@ test('pogłos: płycizna z piaskiem wybrzmiewa dłużej niż woda nad mułem prz
   assert.ok(rough.t60High < calm.t60High, 'szorstka fala skraca pogłos wysokich tonów');
 });
 
-test('wysokość z głębokości: im głębiej, tym niżej (oktawa na 30 m)', () => {
-  near(depthMidi(0) - depthMidi(30), 12, 1e-9);
+test('wysokość z głębokości: im głębiej, tym niżej (oktawa na 34 m)', () => {
+  near(depthMidi(0) - depthMidi(34), 12, 1e-9);
   let prev = Infinity;
   for (let d = 0; d <= 100; d += 5) {
     const m = fishMidi(d, MODES[1]);
     assert.ok(m <= prev, `${d} m`);
     prev = m;
   }
-  assert.ok(fishMidi(100, MODES[1]) <= 38 + 1e-9);
+  assert.ok(fishMidi(100, MODES[1]) <= PITCH.minMidi + 1e-9);
+  // prawdziwe odgłosy ryb leżą głównie w 100–1000 Hz — nasz rejestr też
+  assert.ok(midiToHz(fishMidi(100, MODES[1])) > 100 && midiToHz(fishMidi(0, MODES[1])) < 1000);
+});
+
+test('płytka woda podnosi wysokość: poniżej odcięcia falowodu dźwięk i tak by nie doszedł', () => {
+  const mode = MODES[1];
+  const deep = fishMidi(60, mode, waveguideCutoffHz(64) * 1.35);      // otwarta woda — bez ograniczeń
+  const overBank = fishMidi(60, mode, waveguideCutoffHz(1.5) * 1.35); // droga nad 1,5-metrową mielizną
+  assert.ok(overBank > deep, `${deep} -> ${overBank}`);
+  assert.ok(midiToHz(overBank) >= waveguideCutoffHz(1.5), 'wysokość ponad odcięciem');
+  let prev = 0;                                                       // im płycej, tym wyżej
+  for (const D of [30, 10, 4, 2, 1]) {
+    const m = fishMidi(60, mode, waveguideCutoffHz(D) * 1.35);
+    assert.ok(m >= prev, `D=${D}`);
+    prev = m;
+  }
 });
 
 test('falowanie zanika z głębokością (ruch orbitalny)', () => {

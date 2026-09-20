@@ -117,7 +117,9 @@ dróg, echo od terenu i Doppler. Zmierzone (szum różowy jako sygnał testowy):
 
 Przycisk **„🔊 Włącz dźwięk”** (przeglądarka wymaga kliknięcia). Łódka słucha
 hydrofonem na linie (`Q`/`E` w górę/w dół, suwak w panelu). **Każda ryba brzmi
-ciągle, wszystkie naraz**; wysokość zależy od głębokości (oktawa niżej co 30 m).
+ciągle, wszystkie naraz**; wysokość zależy od głębokości (oktawa niżej co 34 m, od E5 659 Hz
+przy powierzchni), ale nigdy nie schodzi poniżej tego, co przeniesie woda — nad mielizną
+całe stado gra wyżej.
 Woda i dno Bałtyku kształtują to, co dociera do hydrofonu: opóźnienie ~0,69 s/km
 i Doppler przy ruchu, wielokrotne odbicia dno–powierzchnia (dźwięk się przedłuża),
 echa od stoków i brzegów (wraca jeszcze raz — w stronę Helu i brzegu, bo łowisko

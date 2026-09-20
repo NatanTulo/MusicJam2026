@@ -2,7 +2,8 @@
 // Warstwa (band) to ułamek słupa wody pod rybą: 0 = powierzchnia, 1 = dno,
 // więc ta sama ryba nad Głębią Gdańską pływa głębiej niż nad płycizną.
 //
-// Głos ryby brzmi ciągle. Wysokość NIE zależy od gatunku, tylko od głębokości
+// Głos ryby brzmi ciągle. `bright` = ile harmonicznych przepuszcza filtr barwy
+// (odcięcie = f0 × bright) — im wyżej, tym jaśniej. Wysokość NIE zależy od gatunku, tylko od głębokości
 // (sound/music.js) — gatunek daje barwę (harmoniczne), puls (trem) i powolny
 // "oddech" (breath). Inspiracje: dorsz naprawdę "chrząka" (50–500 Hz),
 // flądra jest cicha, więc dostała miękki dron.
@@ -12,7 +13,7 @@ export const SPECIES = [
     voice: {
       // jasny, migoczący — szybkie drżenie jak ławica przy powierzchni
       partials: [1, 0.5, 0.33, 0.2, 0.12, 0.07],
-      level: 0.07, trem: { rate: 7.5, depth: 0.25 }, breath: { rate: 0.13, depth: 0.35 }, bright: 6,
+      level: 0.07, trem: { rate: 7.5, depth: 0.25 }, breath: { rate: 0.13, depth: 0.35 }, bright: 8,
     },
     // smukła torpeda: wąskie ciało, duży widelec ogona, mała płetwa grzbietowa
     model: { body: [0.22, 0.24, 1.0], tail: 'fork-big', dorsal: 'small', tailAmp: 0.5 },
@@ -22,7 +23,7 @@ export const SPECIES = [
     voice: {
       // miękki, fletowy
       partials: [1, 0.35, 0.18, 0.08],
-      level: 0.08, trem: { rate: 4.2, depth: 0.12 }, breath: { rate: 0.09, depth: 0.4 }, bright: 4,
+      level: 0.08, trem: { rate: 4.2, depth: 0.12 }, breath: { rate: 0.09, depth: 0.4 }, bright: 5.5,
     },
     // klasyczna ryba: średnie ciało, widelec ogona, jedna płetwa grzbietowa
     model: { body: [0.3, 0.3, 1.0], tail: 'fork', dorsal: 'mid', tailAmp: 0.4 },
@@ -32,7 +33,7 @@ export const SPECIES = [
     voice: {
       // "chrząkanie": bogate harmoniczne i głęboki puls (prawdziwe dorsze tak robią)
       partials: [1, 0.8, 0.55, 0.35, 0.22, 0.12],
-      level: 0.1, trem: { rate: 3.2, depth: 0.6 }, breath: { rate: 0.07, depth: 0.3 }, bright: 7,
+      level: 0.1, trem: { rate: 3.2, depth: 0.6 }, breath: { rate: 0.07, depth: 0.3 }, bright: 9,
     },
     // byczek z wąsem: masywne ciało + łeb, wachlarz zamiast widelca,
     // podwójna płetwa grzbietowa i wąsik (barbel) pod pyskiem
@@ -43,7 +44,7 @@ export const SPECIES = [
     voice: {
       // cichy, niski dron przy dnie
       partials: [1, 0.3, 0.1],
-      level: 0.11, trem: { rate: 0.8, depth: 0.2 }, breath: { rate: 0.05, depth: 0.45 }, bright: 3,
+      level: 0.11, trem: { rate: 0.8, depth: 0.2 }, breath: { rate: 0.05, depth: 0.45 }, bright: 4.5,
     },
     // placek denny: płaski owal, oczy z góry po jednej stronie,
     // mały wachlarz ogona i kryza (falbanka) wokół całego obrysu zamiast płetwy

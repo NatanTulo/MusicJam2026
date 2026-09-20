@@ -141,9 +141,9 @@ export class LifeSound {
   }
 
   /** Jaką wysokość i barwę ma zdarzenie danego stworzenia. */
-  _make(c, mode, step) {
+  _make(c, mode, step, minHz = 0) {
     const sr = this.engine.ctx.sampleRate;
-    const base = fishMidi(c.depth, mode);          // głębiej = niżej
+    const base = fishMidi(c.depth, mode, minHz);   // głębiej = niżej, ale nie niżej niż niesie woda
     const q = (m) => quantizeToMode(m, mode);
     const up = (m) => { let x = m + 1; while (q(x) !== x) x++; return x; };   // następny dźwięk skali
     let data, fRef;
@@ -231,7 +231,8 @@ export class LifeSound {
   _emit(c, te, listener, env, scan, level, step) {
     const eng = this.engine;
     const ctx = eng.ctx;
-    const { buf, fRef } = this._make(c, eng.mode, step);
+    const minHz = eng.placeCutoffHz(c, listener, env) * 1.35;
+    const { buf, fRef } = this._make(c, eng.mode, step, minHz);
     const plan = eng._channelPlan({ x: c.x, y: c.y, z: c.depth }, listener, env, scan, fRef, { taps: 3, echoes: 1, maxOrder: 4 });
     if (plan.landBlocked || plan.loud * level < 3e-5) return;
     this.recent.push([te, c.kind]);
