@@ -6,10 +6,11 @@ export default defineConfig({
   server: { port: 5173 },
   build: {
     rollupOptions: {
-      // dwie strony: gra i laboratorium dźwięku
+      // trzy strony: gra, laboratorium dźwięku i podgląd muzyczny (piano-roll)
       input: {
         main: resolve(import.meta.dirname, 'index.html'),
         soundLab: resolve(import.meta.dirname, 'sound-lab.html'),
+        musicRoll: resolve(import.meta.dirname, 'music-roll.html'),
       },
     },
   },
