@@ -97,7 +97,9 @@ class PersonToFishMapper:
         height_near: float = 0.85,
         height_far: float = 0.12,
         scale_range: tuple[float, float] = (0.65, 1.8),
-        excitement_speed: float = 0.45,   # predkosc osoby [1/s] uznana za "szybko"
+        excitement_speed: float = 0.28,   # predkosc osoby [1/s] uznana za "szybko"
+        # 0.28 = przejscie przez pol kadru w ~3 s. Wyzej: ryba reaguje dopiero
+        # na bieg; nizej: kazdy drobny ruch rozpedza rybe na maksa.
         use_foot: bool = True,
         auto_range: bool = True,
         scatter: float = 0.05,            # promien rozsuniecia osob (w jednostkach podlogi)

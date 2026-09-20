@@ -183,13 +183,12 @@ export class FishSchool {
 
   _steer(f, dt) {
     const cfg = this.cfg;
-    const maxSpeed = cfg.fishSpeed * (1 + 1.4 * f.excitement);
     let tx = f.tx, ty = f.ty;
     if (f.state === SEARCHING) {
       // detektor zgubił człowieka: ryba krąży wokół ostatniej pozycji.
       // Promień mały (dziesiątki metrów), żeby opóźnienia w hydrofonie
       // tylko lekko falowały, a nie skakały.
-      const r = 45;
+      const r = cfg.searchRadius;
       tx += Math.cos(this.time * 0.35 + f.id) * r;
       ty += Math.sin(this.time * 0.35 + f.id) * r;
     } else if (f.state === LEAVING) {
@@ -202,8 +201,13 @@ export class FishSchool {
     // dążenie z hamowaniem przy celu (bez drgania wokół punktu)
     let dx = tx - f.x, dy = ty - f.y;
     const dist = Math.hypot(dx, dy);
+    // Zryw pogoni: im dalej uciekł cel, tym mocniej ryba się rozpędza. Dzięki temu
+    // szybki ruch człowieka widać od razu, a ryba przy swoim człowieku płynie spokojnie
+    // (mały Doppler w hydrofonie) zamiast stale gnać na maksa.
+    const chase = 1 + (cfg.chaseBoost - 1) * Math.min(1, dist / cfg.chaseDistance);
+    const maxSpeed = cfg.fishSpeed * (1 + cfg.excitementBoost * f.excitement) * chase;
     let desired = maxSpeed;
-    if (dist < 60) desired *= dist / 60;
+    if (dist < 25) desired *= dist / 25;
     let ax = 0, ay = 0;
     if (dist > 1e-3) {
       ax += (dx / dist) * desired - f.vx;
@@ -216,9 +220,10 @@ export class FishSchool {
       if (o === f) continue;
       const ox = f.x - o.x, oy = f.y - o.y;
       const d = Math.hypot(ox, oy);
-      if (d > 1e-3 && d < 40) {
-        ax += (ox / d) * (40 - d) * 0.15;
-        ay += (oy / d) * (40 - d) * 0.15;
+      const sep = cfg.spacing;
+      if (d > 1e-3 && d < sep) {
+        ax += (ox / d) * (sep - d) * 0.15;
+        ay += (oy / d) * (sep - d) * 0.15;
       }
     }
 
