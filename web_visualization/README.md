@@ -73,16 +73,60 @@ chodzą po podłodze. Przycisk **„Pokaż łowisko”** ustawia kamerę nad ryb
 - Adres mostka: domyślnie `http://<host strony>:8765/fish`, inny: `?fish=http://ip:8765/fish`,
   wyłączenie: `?fish=off`.
 
+## Mieszkańcy morza (tło)
+
+Morze nigdy nie jest puste: wokół łódki (promień ~4,5 km) zawsze pływa kilkaset
+drobnych stworzeń — na mapie to **maleńkie kropki bez podpisów**, a w dźwięku **tło muzyczne**.
+Każde ma swoje siedlisko i swoją rolę:
+
+| Kropka | Stworzenie | Gdzie | Dźwięk / rola |
+|---|---|---|---|
+| ● jasnofioletowa | meduza (chełbia modra) | 15–60 % słupa wody, dryfuje z prądem | długi, miękki pad — **harmonia** |
+| ● szara | morświn (stado po 3) | 5–45 %, wynurza się po powietrze | serie kliknięć (echolokacja) — **rytm** |
+| ● brązowa | foka szara | przy powierzchni, wynurza się | przeciągłe zawodzenie — **melodia** |
+| ● piaskowa | babka bycza | **przy dnie, tylko płycizny < 38 m** | stuki — **perkusja** |
+| ● biało-błękitna | ławica szprota (2 × 28) | 20–50 %, kłębi się | jasne arpeggia — **migotanie** |
+| ● zielona | plankton | cały słup wody | ciche iskierki blisko hydrofonu — **faktura** |
+
+Wysokość trzyma zasadę całego świata (głębiej = niżej), a wszystko gra w skali
+wyznaczonej przez dno pod łódką. Odgłosy przechodzą przez ten sam model wody co ryby,
+więc dalsze stworzenia są cichsze, ciemniejsze i **spóźnione**.
+
+Wyłącznik i suwak głośności tła są w panelu. Babek nie zobaczysz nad głębią —
+dosiewają się same, gdy wpłyniesz na płyciznę.
+
+## Panel DJ: muzyka spod wody
+
+Przycisk **„🎛 Panel DJ"**. Stawiasz podwodny głośnik w dowolnym miejscu
+(1 km przed łódką, na łowisku, przy cyplu Helu albo klikając minimapę), wybierasz
+**podkład demo** (generowany w kodzie) albo **własny plik**, i słuchasz, jak ta sama
+muzyka brzmi po przejściu przez morze. Suwak **„na lądzie ↔ na statku"** przełącza
+między oryginałem a tym, co dociera do hydrofonu.
+
+Panel pokazuje odległość, czas dolotu dźwięku, częstotliwość odcięcia basu, liczbę
+dróg, echo od terenu i Doppler. Zmierzone (szum różowy jako sygnał testowy):
+
+| Głośnik | Efekt |
+|---|---|
+| 1 km przed łódką, woda 65 m | prawie bez zmian: −4 dB, widmo ±2 dB, dźwięk idzie 0,68 s |
+| płycizna 3 m, 13,6 km | −24 dB, **2–5 kHz o 31 dB ciszej, 5–12 kHz o 55 dB** (głuche dudnienie), bas ucięty poniżej 49 Hz, dolot 9,2 s |
+| przy cyplu Helu, 13,2 km | −29 dB, podobne stłumienie góry + **echo od stoku 0,2 s po dźwięku bezpośrednim** |
+
 ## Dźwięk: hydrofon łódki
 
 Przycisk **„🔊 Włącz dźwięk”** (przeglądarka wymaga kliknięcia). Łódka słucha
-hydrofonem na linie (`Q`/`E` w górę/w dół, suwak w panelu). Ryby grają nuty,
-a woda i dno Bałtyku je kształtują: opóźnienie ~0,69 s/km, cichnięcie i ciemnienie
-z odległością, echa od powierzchni i dna, cień za wzniesieniami dna. Skala muzyki
-zależy od dna pod łódką. Tło morza zmienia się z głębokością hydrofonu.
+hydrofonem na linie (`Q`/`E` w górę/w dół, suwak w panelu). **Każda ryba brzmi
+ciągle, wszystkie naraz**; wysokość zależy od głębokości (oktawa niżej co 30 m).
+Woda i dno Bałtyku kształtują to, co dociera do hydrofonu: opóźnienie ~0,69 s/km
+i Doppler przy ruchu, wielokrotne odbicia dno–powierzchnia (dźwięk się przedłuża),
+echa od stoków i brzegów (wraca jeszcze raz — w stronę Helu i brzegu, bo łowisko
+leży w otwartej wodzie), pogłos zależny od dna i osadu oraz blokady: cień za
+wzniesieniem, ląd i odcięcie płytkiej wody (niskie tony nie przechodzą przez płyciznę).
+Skala zależy od dna pod łódką, tło morza — od głębokości hydrofonu.
 
 **Laboratorium dźwięku:** [`sound-lab.html`](sound-lab.html) (`npm run dev` →
 http://127.0.0.1:5173/sound-lab.html) — przekrój morza, przeciągane ryby i hydrofon,
+**echogram** (wszystkie drogi dźwięku wybranej ryby: kiedy przychodzą i jak głośno),
 suwaki, widmo, liczby. Ten sam silnik co w grze.
 
 Koncepcja, wzory, uproszczenia i pomiary: **[docs/dzwiek.md](docs/dzwiek.md)**.
@@ -98,10 +142,13 @@ npm test      # testy fizyki dźwięku (node --test)
 | `src/fish/fishSim.js` | pozycja, głębokość, omijanie lądu, cykl życia |
 | `src/fish/fishRender.js` | ryby w Three.js (stały rozmiar ekranowy, linia głębokości, kółko na tafli) |
 | `src/fish/link.js`, `demo.js` | źródło celów: mostek SSE albo demo |
-| `src/sound/acoustics.js` | fizyka: c(z), pochłanianie, drogi, odbicia, cień (czyste funkcje) |
-| `src/sound/music.js` | skale, rytm, nuta z głębokości |
-| `src/sound/engine.js` | silnik WebAudio (gra + laboratorium, też offline) |
+| `src/sound/acoustics.js` | model kanału: metoda źródeł pozornych, cień, odcięcie płytkiej wody, echa od terenu, pogłos (czyste funkcje) |
+| `src/sound/music.js` | skale, wysokość z głębokości |
+| `src/sound/engine.js` | silnik WebAudio: ciągłe głosy ryb przez linie opóźniające, pogłos (gra + laboratorium, też offline) |
 | `src/sound/controller.js` | dźwięk w grze: panel, `Q`/`E`, lina hydrofonu w 3D |
+| `src/life/` | mieszkańcy morza: symulacja siedlisk i ruchu + kropki w Three.js |
+| `src/sound/life.js` | ich odgłosy: synteza zdarzeń + planowanie na siatce rytmu |
+| `src/sound/dj.js`, `demoTrack.js` | panel DJ: podwodny głośnik i podkład demo |
 
 ## Dostęp do głębokości (API)
 

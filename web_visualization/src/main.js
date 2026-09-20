@@ -3,6 +3,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { BathymetryGrid, depthColor } from './bathymetry.js';
 import { FishLayer } from './fish/index.js';
 import { SoundController } from './sound/controller.js';
+import { LifeLayer } from './life/index.js';
+import { DjPanel } from './sound/dj.js';
 
 // ---------------------------------------------------------------------------
 // Konfiguracja
@@ -34,6 +36,11 @@ const hud = {
   fishLabels: $('fish-labels'), fishGoto: $('fish-goto'),
   sndToggle: $('snd-toggle'), sndBadge: $('snd-badge'), hydDepth: $('hyd-depth'),
   hydVal: $('hyd-val'), seaState: $('sea-state'), seaStateVal: $('sea-state-val'), sndInfo: $('snd-info'),
+  lifeToggle: $('life-toggle'), lifeCount: $('life-count'), lifeLevel: $('life-level'),
+  dj: $('dj'), djToggle: $('dj-toggle'), djDemo: $('dj-demo'), djFile: $('dj-file'), djTrack: $('dj-track'),
+  djPlay: $('dj-play'), djStop: $('dj-stop'), djAhead: $('dj-ahead'), djGround: $('dj-ground'), djHel: $('dj-hel'),
+  djPick: $('dj-pick'), djDepth: $('dj-depth'), djDepthVal: $('dj-depth-val'), djPower: $('dj-power'),
+  djPowerVal: $('dj-power-val'), djMix: $('dj-mix'), djMixVal: $('dj-mix-val'), djInfo: $('dj-info'),
 };
 
 // ---------------------------------------------------------------------------
@@ -63,6 +70,8 @@ let lastEchoPush = 0, lastTrailPush = 0, lastHud = 0;
 let stepTime = 0; // czas symulacji dla kroku testowego _step (gdy rAF stoi)
 let fishLayer = null; // ryby = ludzie z kamery (src/fish/)
 let sound = null;     // hydrofon + dźwięk morza (src/sound/)
+let life = null;      // mieszkańcy morza — tło (src/life/)
+let dj = null;        // panel DJ — podwodny głośnik (src/sound/dj.js)
 
 const state = {
   lat: 54.52, lon: 18.95,
@@ -95,6 +104,8 @@ window.boatAPI = {
   getHydrophoneDepth: () => sound?.depth,
   setHydrophoneDepth: (m) => { if (sound) { sound.wantedDepth = m; hud.hydDepth.value = String(m); } },
   getSoundInfo: () => sound?.engine.info,
+  getLife: () => life?.sim.items.map(({ kind, lat, lon, depth, seabed }) => ({ kind, lat, lon, depth, seabed })) ?? [],
+  dj: () => dj,
   getSpeedScale: () => speedScale,
   setSpeedScale: (s) => setTempo(s),
   // Hak testowy: deterministyczny krok fizyki + render, gdy rAF jest zdławiony
@@ -182,8 +193,15 @@ function initScene() {
   });
   sound = new SoundController(scene, {
     toggle: hud.sndToggle, badge: hud.sndBadge, depth: hud.hydDepth, depthVal: hud.hydVal,
-    seaState: hud.seaState, info: hud.sndInfo,
+    seaState: hud.seaState, info: hud.sndInfo, life: hud.lifeLevel,
   });
+  life = new LifeLayer(scene, { toggle: hud.lifeToggle, count: hud.lifeCount });
+  dj = new DjPanel(scene, {
+    panel: hud.dj, toggle: hud.djToggle, demo: hud.djDemo, file: hud.djFile, track: hud.djTrack,
+    play: hud.djPlay, stop: hud.djStop, ahead: hud.djAhead, ground: hud.djGround, hel: hud.djHel,
+    pick: hud.djPick, depth: hud.djDepth, depthVal: hud.djDepthVal, power: hud.djPower, powerVal: hud.djPowerVal,
+    mix: hud.djMix, mixVal: hud.djMixVal, info: hud.djInfo,
+  }, sound);
 
   clock = new THREE.Clock();
   addEventListener('resize', () => {
@@ -803,6 +821,7 @@ function drawMini() {
   });
   ctx.stroke();
   fishLayer?.drawMinimap(ctx, toXY);
+  dj?.drawMinimap(ctx, toXY);
   // łódka
   const [bx, by] = toXY(state.lat, state.lon);
   ctx.save();
@@ -847,6 +866,8 @@ let upgradeToken = 0;
 function refreshMeshes() {
   buildTerrain();
   fishLayer?.setGrid(grid);
+  life?.setGrid(grid);
+  dj?.setGrid(grid);
   try {
     buildBorders();
   } catch (err) {
@@ -962,6 +983,11 @@ function bindInput() {
     if (borderGroup) borderGroup.visible = showBorders;
   });
   hud.fishGoto.addEventListener('click', () => grid && showFishingGround());
+  hud.mini.addEventListener('click', (e) => {
+    if (!grid || !dj?.pickMode) return;
+    const p = miniToLatLon(e);
+    if (p) { dj.placeAt(p.lat, p.lon); toast('Głośnik DJ postawiony'); }
+  });
   hud.seaState.addEventListener('input', () => {
     hud.seaStateVal.textContent = hud.seaState.value;
   });
@@ -976,7 +1002,24 @@ function bindInput() {
 // ---------------------------------------------------------------------------
 function updateSeaLife(dt, t) {
   fishLayer.update(dt, t, { camera, VEX });
-  sound.update(dt, t, { state, grid, fish: fishLayer.list(), VEX, camera, boatY: boat.position.y });
+  life.update(dt, t, { VEX, state });
+  dj.update(dt, t, { state, grid, VEX, camera });
+  sound.update(dt, t, {
+    state, grid, fish: fishLayer.list(), life: life.emitters(), music: dj.source(),
+    VEX, camera, boatY: boat.position.y,
+  });
+}
+
+/** Klik na minimapie stawia głośnik DJ (gdy włączony tryb "wskaż na minimapie"). */
+function miniToLatLon(e) {
+  const cv = hud.mini;
+  const S = cv.width, H = S * (grid.nLat / grid.nLon);
+  const x = (e.offsetX / cv.clientWidth) * cv.width, y = (e.offsetY / cv.clientHeight) * cv.height;
+  if (y > H) return null;
+  return {
+    lat: grid.lat0 + (1 - y / H) * (grid.lat1 - grid.lat0),
+    lon: grid.lon0 + (x / S) * (grid.lon1 - grid.lon0),
+  };
 }
 
 /** Kamera nad łowisko: całe widać z góry, pod kątem, żeby było czuć głębokość. */

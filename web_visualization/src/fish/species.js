@@ -2,44 +2,41 @@
 // Warstwa (band) to ułamek słupa wody pod rybą: 0 = powierzchnia, 1 = dno,
 // więc ta sama ryba nad Głębią Gdańską pływa głębiej niż nad płycizną.
 //
-// Głosy inspirowane prawdziwymi dźwiękami ryb, ale ustawione muzycznie:
-// dorsz naprawdę "chrząka" (50–500 Hz), śledź wydaje trzaski (FRT),
-// flądra jest cicha, więc dostała niski, długi dron.
+// Głos ryby brzmi ciągle. Wysokość NIE zależy od gatunku, tylko od głębokości
+// (sound/music.js) — gatunek daje barwę (harmoniczne), puls (trem) i powolny
+// "oddech" (breath). Inspiracje: dorsz naprawdę "chrząka" (50–500 Hz),
+// flądra jest cicha, więc dostała miękki dron.
 export const SPECIES = [
   {
     id: 'szprot', name: 'szprot', band: [0.05, 0.28], weight: 0.25, size: 0.75,
     voice: {
-      base: 74,                        // D5 — najwyżej, przy powierzchni
-      partials: [1, 0.55, 0.32, 0.2, 0.12, 0.08, 0.05],
-      attack: 0.004, decay: 0.28, level: 0.11,
-      pulses: 3,                       // uderzeń na takt (rytm euklidesowy z 8)
+      // jasny, migoczący — szybkie drżenie jak ławica przy powierzchni
+      partials: [1, 0.5, 0.33, 0.2, 0.12, 0.07],
+      level: 0.07, trem: { rate: 7.5, depth: 0.25 }, breath: { rate: 0.13, depth: 0.35 }, bright: 6,
     },
   },
   {
     id: 'sledz', name: 'śledź', band: [0.28, 0.58], weight: 0.3, size: 0.9,
     voice: {
-      base: 62,                        // D4
-      partials: [1, 0.25, 0.45, 0.12, 0.2, 0.05],
-      attack: 0.012, decay: 0.55, level: 0.12,
-      pulses: 2,
+      // miękki, fletowy
+      partials: [1, 0.35, 0.18, 0.08],
+      level: 0.08, trem: { rate: 4.2, depth: 0.12 }, breath: { rate: 0.09, depth: 0.4 }, bright: 4,
     },
   },
   {
     id: 'dorsz', name: 'dorsz', band: [0.6, 0.86], weight: 0.3, size: 1.3,
     voice: {
-      base: 50,                        // D3 — chrząkanie
-      partials: [1, 0.9, 0.55, 0.35, 0.22, 0.12],
-      attack: 0.02, decay: 0.42, level: 0.16,
-      pulses: 3,
+      // "chrząkanie": bogate harmoniczne i głęboki puls (prawdziwe dorsze tak robią)
+      partials: [1, 0.8, 0.55, 0.35, 0.22, 0.12],
+      level: 0.1, trem: { rate: 3.2, depth: 0.6 }, breath: { rate: 0.07, depth: 0.3 }, bright: 7,
     },
   },
   {
     id: 'fladra', name: 'flądra', band: [0.88, 0.97], weight: 0.15, size: 1.05,
     voice: {
-      base: 38,                        // D2 — przy dnie
-      partials: [1, 0.4, 0.18, 0.08],
-      attack: 0.09, decay: 1.4, level: 0.2,
-      pulses: 1,
+      // cichy, niski dron przy dnie
+      partials: [1, 0.3, 0.1],
+      level: 0.11, trem: { rate: 0.8, depth: 0.2 }, breath: { rate: 0.05, depth: 0.45 }, bright: 3,
     },
   },
 ];

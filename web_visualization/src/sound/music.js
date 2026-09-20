@@ -1,13 +1,12 @@
-// Warstwa muzyczna: jak położenie ryb i dno zamieniają się w nuty.
+// Warstwa muzyczna: jak położenie ryb i dno zamieniają się w dźwięk.
 //
+//  * Każda ryba brzmi CIĄGLE (wszystkie naraz) — to hydrofon i woda decydują,
+//    jak głośno, jak jasno i z jakim opóźnieniem ją słychać (acoustics.js).
+//  * WYSOKOŚĆ zależy od głębokości ryby: głębiej = niżej (oktawa na 30 m).
 //  * SKALA zależy od dna pod ŁÓDKĄ (miejsce słuchacza ustala harmonię):
-//      płycizna -> jasna pentatonika durowa, stok -> mollowa, głębia -> mroczne in-sen.
-//    Wszystkie ryby grają w tej samej skali, więc nic się nie gryzie.
-//  * WYSOKOŚĆ zależy od głębokości RYBY w jej warstwie: niżej = niższa nuta.
-//    Rejestr (oktawa) daje gatunek: szprot przy powierzchni wysoko, flądra przy dnie nisko.
-//  * RYTM: rytm euklidesowy (k uderzeń na 8 ósemek), k rośnie, gdy człowiek się rusza.
-//    Przesunięcie wzoru z ID ryby — ryby nie grają unisono.
-//  * Dopiero potem akustyka: opóźnienie, tłumienie, echa (acoustics.js).
+//      płycizna -> pentatonika durowa, stok -> mollowa, głębia -> in-sen.
+//    Wysokości ryb są przyciągane do tej skali, więc współbrzmią.
+//  * Gatunek daje BARWĘ i puls (dorsz "chrząka" rytmicznie, flądra ledwo faluje).
 export const MODES = [
   { id: 'shallow', until: 35, name: 'D-dur pentatonika', mood: 'płycizna — jasno', steps: [0, 2, 4, 7, 9] },
   { id: 'slope', until: 75, name: 'D-moll pentatonika', mood: 'stok — melancholijnie', steps: [0, 3, 5, 7, 10] },
@@ -35,17 +34,34 @@ export function noteName(midi) {
   return `${NAMES[((r % 12) + 12) % 12]}${Math.floor(r / 12) - 1}`;
 }
 
-/** Rytm euklidesowy: k uderzeń rozłożonych możliwie równo na n krokach. */
-export function euclidHit(k, n, i) {
-  return ((i * k) % n) < k;
+// ---------------------------------------------------------------------------
+// Wysokość z głębokości: im głębiej, tym niżej
+// ---------------------------------------------------------------------------
+/** Powierzchnia = H3 (~247 Hz), oktawa niżej co 30 m wody, najniżej D1 (~37 Hz).
+ *  Przykład: 15 m ≈ 175 Hz, 30 m ≈ 123 Hz, 60 m ≈ 62 Hz, 100 m → 37 Hz.
+ *  Ryba przy dnie Głębi Gdańskiej dudni, szprot przy powierzchni śpiewa. */
+export const PITCH = { surfaceMidi: 59, metersPerOctave: 30, minMidi: 26 };
+
+export function depthMidi(depth) {
+  return Math.max(PITCH.minMidi, PITCH.surfaceMidi - (12 * Math.max(0, depth)) / PITCH.metersPerOctave);
 }
 
-/** Nuta ryby: pozycja w jej warstwie wody -> stopień skali (głębiej = niżej). */
-export function pitchFor(fish, species, mode, degrees = 7) {
-  const [lo, hi] = species.band;
-  const frac = fish.seabed > 0 ? fish.depth / fish.seabed : (lo + hi) / 2;
-  const pos = Math.max(0, Math.min(1, (frac - lo) / (hi - lo)));
-  const idx = Math.round((1 - pos) * (degrees - 1));
-  const n = mode.steps.length;
-  return species.voice.base + 12 * Math.floor(idx / n) + mode.steps[idx % n];
+/** Najbliższy dźwięk skali (tonika D). Zmiana głębokości przesuwa rybę po skali,
+ *  a silnik robi płynne glissando między stopniami. */
+export function quantizeToMode(midi, mode) {
+  const root = 2; // D
+  let best = midi, bestD = Infinity;
+  const base = Math.floor(midi / 12) * 12;
+  for (let oct = -12; oct <= 12; oct += 12) {
+    for (const st of mode.steps) {
+      const m = base + oct + root + st;
+      const d = Math.abs(m - midi);
+      if (d < bestD - 1e-9) { best = m; bestD = d; }
+    }
+  }
+  return Math.max(PITCH.minMidi, best);
+}
+
+export function fishMidi(depth, mode) {
+  return quantizeToMode(depthMidi(depth), mode);
 }

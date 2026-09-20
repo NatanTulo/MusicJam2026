@@ -4,8 +4,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   soundSpeed, soundSpeedAt, absorptionDbPerKm, spreadingLossDb, surfaceReflection,
-  bottomReflection, knifeEdgeLossDb, propagate, coherentLevelDb, orbitalDecay, BALTIC_SUMMER,
+  bottomReflection, knifeEdgeLossDb, orbitalDecay, BALTIC_SUMMER,
+  channel, coherentLevelDb, gainAt, fitTap, waveguideCutoffHz, evanescentLossDb,
+  scanReflectors, terrainEchoes, waterColumnReverb,
 } from '../src/sound/acoustics.js';
+import { depthMidi, fishMidi, MODES } from '../src/sound/music.js';
 
 const near = (a, b, tol) => assert.ok(Math.abs(a - b) <= tol, `${a} != ${b} ±${tol}`);
 
@@ -54,35 +57,116 @@ test('cień za grzbietem: strata rośnie z częstotliwością (~3 dB/oktawę, bo
   near(loss[3] - loss[2], 6, 1);
 });
 
+const direct = (ch) => ch.arrivals.find((a) => a.kind === 'direct');
+const db = (x) => 20 * Math.log10(Math.abs(x) + 1e-12);
+
 test('lustro Lloyda: płytki hydrofon słyszy rybę dużo ciszej niż głęboki (200 Hz)', () => {
   const env = { depthAt: () => 60 };
   const fish = { x: 1000, y: 0, z: 20 };
-  const f = [200];
-  const opts = { seaState: 0, paths: { bottom: false } };
-  const shallow = coherentLevelDb(propagate(fish, { x: 0, y: 0, z: 2 }, env, f, opts), f);
-  const deep = coherentLevelDb(propagate(fish, { x: 0, y: 0, z: 30 }, env, f, opts), f);
-  assert.ok(deep - shallow > 15, `płytko ${shallow.toFixed(1)} dB, głęboko ${deep.toFixed(1)} dB`);
+  const opts = { seaState: 0, paths: { bottom: false, multi: false } };
+  const lvl = (z) => {
+    const ch = channel(fish, { x: 0, y: 0, z }, env, opts);
+    return coherentLevelDb(ch.arrivals, ch.freqs, 200);
+  };
+  assert.ok(lvl(30) - lvl(2) > 15, `płytko ${lvl(2).toFixed(1)} dB, głęboko ${lvl(30).toFixed(1)} dB`);
 });
 
 test('opóźnienie = droga / prędkość dźwięku (~0.69 s na 1 km)', () => {
-  const env = { depthAt: () => 50 };
-  const res = propagate({ x: 1000, y: 0, z: 10 }, { x: 0, y: 0, z: 10 }, env, [440]);
-  const direct = res.paths.find((p) => p.kind === 'direct');
-  near(direct.delay, 1000 / res.cMean, 1e-9);
-  near(direct.delay, 0.69, 0.02);
-  // echo od dna przychodzi później niż dźwięk bezpośredni
-  assert.ok(res.paths.find((p) => p.kind === 'bottom').delay > direct.delay);
+  const ch = channel({ x: 1000, y: 0, z: 10 }, { x: 0, y: 0, z: 10 }, { depthAt: () => 50 });
+  near(direct(ch).delay, 1000 / ch.cMean, 1e-9);
+  near(direct(ch).delay, 0.69, 0.02);
 });
 
-test('grzbiet dna między rybą a hydrofonem blokuje drogę bezpośrednią', () => {
+test('metoda źródeł pozornych: kolejne odbicia przychodzą później, droga bezpośrednia pierwsza', () => {
+  const ch = channel({ x: 300, y: 0, z: 25 }, { x: 0, y: 0, z: 10 }, { depthAt: () => 40 }, { maxOrder: 4 });
+  assert.equal(ch.arrivals[0].kind, 'direct');
+  for (let i = 1; i < ch.arrivals.length; i++) assert.ok(ch.arrivals[i].delay >= ch.arrivals[i - 1].delay);
+  // geometria rzędu 1: od powierzchni = obraz na -zs, od dna = obraz na 2D - zs
+  const s1 = ch.arrivals.find((a) => a.kind === 'surface');
+  const b1 = ch.arrivals.find((a) => a.kind === 'bottom');
+  near(s1.r, Math.hypot(300, 25 + 10), 1e-9);
+  near(b1.r, Math.hypot(300, 2 * 40 - 25 - 10), 1e-9);
+  // nieparzysta liczba odbić od powierzchni = odwrócona faza
+  for (const a of ch.arrivals) assert.equal(Math.sign(a.gains[3]), a.ns % 2 ? -1 : 1, a.label);
+});
+
+test('płytka woda z piaskiem przedłuża dźwięk (więcej energii w odbiciach) niż głęboki muł', () => {
+  const tail = (D) => {
+    const ch = channel({ x: 1500, y: 0, z: D * 0.5 }, { x: 0, y: 0, z: D * 0.4 }, { depthAt: () => D }, { maxOrder: 6 });
+    const dir = gainAt(ch.freqs, direct(ch).gains, 250) ** 2;
+    const rest = ch.arrivals.filter((a) => a.kind !== 'direct').reduce((s, a) => s + gainAt(ch.freqs, a.gains, 250) ** 2, 0);
+    return 10 * Math.log10(rest / dir);
+  };
+  assert.ok(tail(20) > tail(100) + 6, `piasek 20 m: ${tail(20).toFixed(1)} dB, muł 100 m: ${tail(100).toFixed(1)} dB`);
+});
+
+test('grzbiet dna między rybą a hydrofonem blokuje drogę bezpośrednią (wysokie tony bardziej)', () => {
   const ridge = { depthAt: (x) => (Math.abs(x - 1000) < 150 ? 12 : 70) };
   const flat = { depthAt: () => 70 };
   const fish = { x: 2000, y: 0, z: 50 }, hyd = { x: 0, y: 0, z: 50 };
-  const f = [150, 3000];
-  const blocked = propagate(fish, hyd, ridge, f).paths.find((p) => p.kind === 'direct');
-  const open = propagate(fish, hyd, flat, f).paths.find((p) => p.kind === 'direct');
-  assert.ok(Math.abs(blocked.gains[1]) < Math.abs(open.gains[1]) / 10, 'wysoki ton zza grzbietu');
-  assert.ok(Math.abs(blocked.gains[0]) > Math.abs(blocked.gains[1]), 'niski ton przechodzi lepiej');
+  const b = direct(channel(fish, hyd, ridge)), o = direct(channel(fish, hyd, flat));
+  const loss = (f) => db(gainAt(FG, o.gains, f)) - db(gainAt(FG, b.gains, f));
+  const FG = channel(fish, hyd, flat).freqs;
+  assert.ok(loss(4000) > 20, `strata 4 kHz: ${loss(4000).toFixed(1)} dB`);
+  assert.ok(loss(4000) > loss(125) + 5, 'niski ton przechodzi lepiej');
+});
+
+test('ląd na drodze: dźwięk nie dociera wcale', () => {
+  const env = { depthAt: (x) => (x > 400 && x < 600 ? 0 : 40) };
+  const ch = channel({ x: 1000, y: 0, z: 20 }, { x: 0, y: 0, z: 20 }, env);
+  assert.ok(ch.landBlocked);
+  assert.ok(ch.arrivals.every((a) => a.gains.every((g) => g === 0)));
+});
+
+test('odcięcie płytkiej wody: niskie tony nie przechodzą przez płyciznę', () => {
+  near(waveguideCutoffHz(25, 1450), 30.4, 0.5);     // 25 m: poniżej ~30 Hz nic
+  near(waveguideCutoffHz(5, 1450), 152, 1);         // 5 m: poniżej ~150 Hz nic
+  assert.ok(evanescentLossDb(40, waveguideCutoffHz(5), 500) > 60, 'D1 przez 500 m płycizny 5 m');
+  assert.equal(evanescentLossDb(300, waveguideCutoffHz(5), 500), 0);
+});
+
+test('filtr drogi: poziom przy f0 i częstotliwość -3 dB', () => {
+  const freqs = [63, 125, 250, 500, 1000, 2000, 4000, 8000];
+  const gains = freqs.map((f) => 0.5 / Math.sqrt(1 + (f / 1000) ** 4));   // "prawdziwy" dolnoprzepust 1 kHz
+  const fit = fitTap(freqs, gains, 125);
+  near(fit.gain, 0.5, 0.01);
+  near(fit.cutoff, 1000, 150);
+});
+
+test('echo od brzegu: znalezione we właściwej odległości, opóźnienie z geometrii', () => {
+  // brzeg na wschód od hydrofonu, 2 km
+  const env = { depthAt: (x) => (x > 2000 ? 0 : x > 1700 ? 40 * (2000 - x) / 300 : 40) };
+  const hyd = { x: 0, y: 0, z: 15 };
+  const scan = scanReflectors(hyd, env, { rays: 36 });
+  const east = scan.reflectors.find((r) => Math.abs(r.azimuth - Math.PI / 2) < 0.01);
+  assert.ok(east && Math.abs(east.range - 1860) < 150, `ściana na ${east?.range} m`);
+  // ryba na zachód: dźwięk mija łódkę, odbija się od brzegu i wraca
+  const fish = { x: -500, y: 0, z: 15 };
+  const echoes = terrainEchoes(fish, hyd, scan, env, { count: 2 });
+  assert.ok(echoes.length >= 1, 'jest echo');
+  const e = echoes[0];
+  const expected = (Math.hypot(e.point.x - fish.x, e.point.z - fish.z) + Math.hypot(e.point.x, e.point.z - hyd.z)) / soundSpeedAt(15);
+  near(e.delay, expected, 0.01);
+  assert.ok(e.delay - 500 / 1480 > 2, `echo ${(e.delay).toFixed(2)} s po ~2,5 s drogi tam i z powrotem`);
+});
+
+test('pogłos: płycizna z piaskiem wybrzmiewa dłużej niż woda nad mułem przy tej samej głębokości rzędu', () => {
+  const sand = waterColumnReverb(25, 2), mud = waterColumnReverb(80, 2);
+  assert.ok(sand.t60 > mud.t60, `piasek ${sand.t60.toFixed(2)} s, muł ${mud.t60.toFixed(2)} s`);
+  near(sand.flutterPeriod, 50 / soundSpeedAt(12.5), 1e-6);   // trzepotanie co 2D/c
+  const calm = waterColumnReverb(40, 0), rough = waterColumnReverb(40, 6);
+  assert.ok(rough.t60High < calm.t60High, 'szorstka fala skraca pogłos wysokich tonów');
+});
+
+test('wysokość z głębokości: im głębiej, tym niżej (oktawa na 30 m)', () => {
+  near(depthMidi(0) - depthMidi(30), 12, 1e-9);
+  let prev = Infinity;
+  for (let d = 0; d <= 100; d += 5) {
+    const m = fishMidi(d, MODES[1]);
+    assert.ok(m <= prev, `${d} m`);
+    prev = m;
+  }
+  assert.ok(fishMidi(100, MODES[1]) <= 26 + 1e-9);
 });
 
 test('falowanie zanika z głębokością (ruch orbitalny)', () => {

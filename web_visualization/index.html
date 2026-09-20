@@ -45,6 +45,20 @@
     </div>
 
     <div class="block">
+      <div class="block-title">MIESZKAŃCY MORZA (TŁO)</div>
+      <label class="check"><input id="life-toggle" type="checkbox" checked /> pokaż i słuchaj</label>
+      <div class="life-legend">
+        <span><i style="background:#cdb8ff"></i>meduzy — harmonia</span>
+        <span><i style="background:#b3c2cf"></i>morświny — rytm</span>
+        <span><i style="background:#9b8b78"></i>foki — melodia</span>
+        <span><i style="background:#e6c46e"></i>babki — perkusja</span>
+        <span><i style="background:#d6ecff"></i>ławice — migotanie</span>
+        <span><i style="background:#7fffd4"></i>plankton — iskierki</span>
+      </div>
+      <div id="life-count" class="tiny"></div>
+    </div>
+
+    <div class="block">
       <div class="block-title">DŹWIĘK — HYDROFON <span id="snd-badge" class="badge info">wył.</span></div>
       <button id="snd-toggle" class="btn">🔊 Włącz dźwięk</button>
       <label class="slider">Głębokość hydrofonu <strong><span id="hyd-val">10.0</span> m</strong>
@@ -53,7 +67,11 @@
       <label class="slider">Stan morza <strong id="sea-state-val">2</strong>
         <input id="sea-state" type="range" min="0" max="6" step="1" value="2" />
       </label>
+      <label class="slider">Tło muzyczne (mieszkańcy morza)
+        <input id="life-level" type="range" min="0" max="2" step="0.05" value="1" />
+      </label>
       <div id="snd-info" class="snd-info">Dźwięk wyłączony.</div>
+      <button id="dj-toggle" class="btn">🎛 Panel DJ — muzyka spod wody</button>
       <p class="tiny"><kbd>Q</kbd>/<kbd>E</kbd> hydrofon w górę / w dół ·
         <a href="./sound-lab.html" target="_blank" rel="noopener">laboratorium dźwięku →</a></p>
     </div>
@@ -84,6 +102,35 @@
       <p><kbd>W</kbd>/<kbd>S</kbd> gaz / wstecz · <kbd>A</kbd>/<kbd>D</kbd> skręt · mysz: obrót/zoom · <kbd>R</kbd> restart · <kbd>C</kbd> kamera · <kbd>Q</kbd>/<kbd>E</kbd> hydrofon · <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd>/<kbd>4</kbd>/<kbd>5</kbd> tempo 1×/100×/500×/1000×/5000×</p>
       <p class="tiny">API dla dewelopera: <code>boatAPI.getDepth()</code>, <code>boatAPI.getPosition()</code> — w konsoli przeglądarki.</p>
     </div>
+  </aside>
+
+  <!-- Panel DJ: podwodny głośnik -->
+  <aside id="dj" hidden>
+    <div class="dj-title">🎛 PANEL DJ <span class="tiny">— jak brzmi muzyka puszczona spod wody, słuchana ze statku</span></div>
+    <div class="dj-row">
+      <button id="dj-demo" class="btn sm">♪ Podkład demo</button>
+      <label class="btn sm file">📂 Własny plik<input id="dj-file" type="file" accept="audio/*" hidden /></label>
+    </div>
+    <div id="dj-track" class="tiny">Brak muzyki — wybierz demo albo plik.</div>
+    <div class="dj-row">
+      <button id="dj-play" class="btn sm">▶ Graj</button>
+      <button id="dj-stop" class="btn sm">■ Stop</button>
+    </div>
+    <div class="dj-sub">Gdzie stoi głośnik</div>
+    <div class="dj-row wrap">
+      <button id="dj-ahead" class="btn sm">1 km przed łódką</button>
+      <button id="dj-ground" class="btn sm">na łowisku</button>
+      <button id="dj-hel" class="btn sm">przy cyplu Helu</button>
+      <button id="dj-pick" class="btn sm">📍 wskaż na minimapie</button>
+    </div>
+    <label class="slider">Głębokość głośnika <strong><span id="dj-depth-val">8.0</span> m</strong>
+      <input id="dj-depth" type="range" min="0.5" max="100" step="0.5" value="8" /></label>
+    <label class="slider">Moc głośnika <strong id="dj-power-val">+20 dB</strong>
+      <input id="dj-power" type="range" min="0" max="40" step="1" value="20" /></label>
+    <label class="slider">Słuchaj: <strong id="dj-mix-val">na statku</strong>
+      <input id="dj-mix" type="range" min="0" max="1" step="0.01" value="1" />
+      <span class="dj-ends"><span>na lądzie (oryginał)</span><span>na statku (pod wodą)</span></span></label>
+    <div id="dj-info" class="snd-info">Postaw głośnik na mapie i kliknij „Graj”.</div>
   </aside>
 
   <!-- Minimapa -->

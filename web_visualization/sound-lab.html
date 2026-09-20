@@ -11,9 +11,9 @@
   <header>
     <div>
       <h1>🎧 Laboratorium dźwięku morza</h1>
-      <p class="sub">Przekrój morza od łódki w bok. <strong>Przeciągaj ryby i hydrofon</strong>, zmieniaj
-        głębokość i dno — słuchaj, jak zmienia się brzmienie. Ten sam silnik gra w
-        <a href="./index.html">Batymetry Boat</a>.</p>
+      <p class="sub">Przekrój morza od łódki w bok. Wszystkie ryby brzmią naraz, a woda i dno decydują, co i kiedy
+        dociera do hydrofonu. <strong>Przeciągaj ryby i hydrofon</strong>, zmieniaj dno, kliknij rybę w tabeli,
+        żeby zobaczyć jej echogram. Ten sam silnik gra w <a href="./index.html">Batymetry Boat</a>.</p>
     </div>
     <button id="play" class="play">▶ Włącz dźwięk</button>
   </header>
@@ -26,14 +26,24 @@
         <span><i class="l surface"></i> odbicie od powierzchni (odwraca fazę)</span>
         <span><i class="l bottom"></i> odbicie od dna</span>
         <span><i class="l blocked"></i> zasłonięta przez dno</span>
+        <span><i class="l echo"></i> echo od terenu (stok, brzeg)</span>
         <span class="muted">grubość linii = głośność tej drogi</span>
+      </div>
+      <div class="echo-head"><b>Echogram</b> <span id="echo-title" class="muted"></span></div>
+      <canvas id="echogram"></canvas>
+      <div class="legend">
+        <span><i class="dot direct"></i> bezpośrednia</span><span><i class="dot surface"></i> od powierzchni</span>
+        <span><i class="dot bottom"></i> od dna</span><span><i class="dot multi"></i> wielokrotne (p = powierzchnia, d = dno)</span>
+        <span><i class="dot echo"></i> echo od terenu</span><span><i class="dot blocked"></i> nie dociera</span>
+        <span class="muted">linia przerywana = zanik pogłosu (T60)</span>
       </div>
       <canvas id="spectrum"></canvas>
       <table id="fish-table">
         <thead><tr>
-          <th>gra</th><th>ryba</th><th>nuta</th><th>odległość</th><th>opóźnienie</th>
-          <th title="strata na drodze bezpośredniej: rozchodzenie + pochłanianie">strata</th>
-          <th title="dodatkowa strata za wzniesieniem dna">cień</th><th>poziom</th><th>drogi (dB)</th>
+          <th>gra</th><th>ryba (głębokość)</th><th>dźwięk</th><th>odległość</th><th>opóźnienie</th>
+          <th title="ile dróg dociera i jak długo trwa ich rozmycie">odbicia</th>
+          <th title="echo od stoku/brzegu: po ilu sekundach i jak głośno">echo terenu</th>
+          <th title="poniżej tej częstotliwości płytka woda nie przenosi dźwięku">odcięcie</th><th>poziom</th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -48,6 +58,12 @@
       <label title="1 = fizycznie. Na mapie o skali km efekt pochłaniania jest prawie niesłyszalny, dlatego domyślnie wzmacniamy go 20×.">
         Pochłanianie × <strong id="abs-val">20</strong>
         <input id="abs" type="range" min="1" max="60" step="1" value="20" /></label>
+      <label>Pogłos wody <strong id="rev-val">1.0</strong>
+        <input id="rev" type="range" min="0" max="2" step="0.1" value="1" /></label>
+      <label>Echa od terenu <strong id="echo-val">1.0</strong>
+        <input id="echo" type="range" min="0" max="2" step="0.1" value="1" /></label>
+      <label title="Największa zmiana wysokości od ruchu ryby względem hydrofonu">Doppler (limit) <strong id="dop-val">2 %</strong>
+        <input id="dop" type="range" min="0" max="0.1" step="0.005" value="0.02" /></label>
       <label>Głośność <input id="vol" type="range" min="0" max="1" step="0.01" value="0.8" /></label>
 
       <fieldset><legend>Warstwy</legend>
@@ -63,19 +79,22 @@
         <label class="check"><input type="checkbox" data-path="direct" checked /> bezpośrednia</label>
         <label class="check"><input type="checkbox" data-path="surface" checked /> od powierzchni</label>
         <label class="check"><input type="checkbox" data-path="bottom" checked /> od dna</label>
+        <label class="check"><input type="checkbox" data-path="multi" checked /> wielokrotne</label>
       </fieldset>
 
       <div id="water" class="readout"></div>
       <details>
         <summary>Co tu słychać?</summary>
         <ul class="explain">
-          <li><b>Płytko (0–5 m):</b> głośne fale i pęcherzyki, szum „oddycha” w rytmie falowania.
-            Ryby cichną: odbicie od powierzchni przychodzi prawie razem z dźwiękiem bezpośrednim
-            w odwróconej fazie i je wygasza (lustro Lloyda).</li>
-          <li><b>Średnio:</b> fale ciemnieją i cichną, ryby są najpełniejsze.</li>
-          <li><b>Przy dnie:</b> dudnienie głębin, syk osadu, echo od dna prawie bez opóźnienia.</li>
-          <li><b>Daleko:</b> ciszej, później i ciemniej (woda zjada wysokie tony).</li>
-          <li><b>Za grzbietem dna</b> (profil „grzbiet”): wysokie tony są ucinane, niskie się przeginają.</li>
+          <li><b>Wszystkie ryby brzmią naraz</b>, każda ciągle. Wysokość: im głębiej, tym niżej (oktawa na 30 m).</li>
+          <li><b>Odległość:</b> dźwięk dociera później (~0,69 s/km), ciszej i ciemniej. Gdy ryba płynie,
+            opóźnienie się zmienia — słychać to jako lekką zmianę wysokości (Doppler).</li>
+          <li><b>Przedłużanie:</b> w płytkiej wodzie z piaskiem dźwięk odbija się wiele razy między dnem
+            a powierzchnią — rozmywa się i długo wybrzmiewa. Nad mułem gaśnie szybko.</li>
+          <li><b>Echo:</b> profil „Brzeg” — dźwięk mija łódkę, odbija się od brzegu 3 km dalej i wraca po ~3 s.</li>
+          <li><b>Nie dociera:</b> za grzbietem (cień), przez ląd, a niskie tony nie przejdą przez płyciznę
+            (kolumna „odcięcie”). Przeciągnij flądrę za grzbiet albo na płytko.</li>
+          <li><b>Płytko (0–5 m):</b> fale, pęcherzyki; ryby cichną — echo od powierzchni w przeciwfazie je wygasza.</li>
           <li><b>Skala</b> zależy od dna pod łódką: płycizna dur, stok moll, głębia in-sen.</li>
         </ul>
       </details>
