@@ -57,7 +57,7 @@ class NanoDetONNX(Detector):
         self,
         model_path: str,
         score_threshold: float = 0.35,
-        iou_threshold: float = 0.6,
+        iou_threshold: float = 0.5,
         num_threads: int = 4,
     ) -> None:
         import onnxruntime as ort

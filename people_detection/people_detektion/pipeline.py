@@ -36,7 +36,7 @@ class PeoplePipeline:
         detector: str = "auto",
         model_path: str = "models/nanodet-plus-m-1.5x-416.onnx",
         score_threshold: float = 0.35,
-        iou_threshold: float = 0.6,
+        iou_threshold: float = 0.5,
         num_threads: int = 4,
         detect_fps: float = 12.0,
         preview_width: int = 320,

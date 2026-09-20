@@ -5,6 +5,7 @@ __pycache__/
 venv/
 *.onnx
 recordings/
+runs/
 *.mp4
 
 # Node (web_visualization)

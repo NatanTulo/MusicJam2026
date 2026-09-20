@@ -44,13 +44,21 @@ def parse_args(argv=None) -> argparse.Namespace:
     det.add_argument("--detector", default="auto", choices=["auto", "nanodet", "hog"])
     det.add_argument("--model", default="models/nanodet-plus-m-1.5x-416.onnx")
     det.add_argument("--score", type=float, default=0.35, help="prog pewnosci detekcji")
-    det.add_argument("--nms", type=float, default=0.6)
+    det.add_argument("--nms", type=float, default=0.5)
     det.add_argument("--threads", type=int, default=4, help="watki onnxruntime (RPi5 ma 4 rdzenie)")
     det.add_argument("--detect-fps", type=float, default=12.0, help="ile razy na sekunde uruchamiac detekcje")
 
     trk = p.add_argument_group("tracking")
-    trk.add_argument("--max-age", type=float, default=1.0, help="ile sekund track zyje bez detekcji")
+    trk.add_argument("--max-age", type=float, default=2.0, help="ile sekund track zyje bez detekcji")
     trk.add_argument("--min-hits", type=int, default=3, help="ile trafien zanim osoba zostanie uznana")
+    trk.add_argument("--reid-window", type=float, default=4.0,
+                     help="jak dlugo pamietac zniknietych do re-ID (0 = wylacza)")
+
+    fsh = p.add_argument_group("mapowanie (osoba -> ryba)")
+    fsh.add_argument("--excitement-speed", type=float, default=None,
+                     help="predkosc osoby [1/s] uznana za 'szybko' (domyslnie 0.28 z"
+                          " PersonToFishMapper); siedzaca publika rusza sie subtelnie,"
+                          " wiec na sali zwykle trzeba NIZEJ (np. 0.2)")
 
     viz = p.add_argument_group("wizualizacja")
     viz.add_argument("--width", type=int, default=1280)
@@ -83,7 +91,8 @@ def main(argv=None) -> int:
         score_threshold=args.score, iou_threshold=args.nms,
         num_threads=args.threads, detect_fps=args.detect_fps,
         preview_width=args.preview_width,
-        tracker_kwargs={"max_age": args.max_age, "min_hits": args.min_hits},
+        tracker_kwargs={"max_age": args.max_age, "min_hits": args.min_hits,
+                        "reid_window": args.reid_window},
     )
 
     try:
@@ -96,7 +105,8 @@ def main(argv=None) -> int:
     aquarium.show_debug = args.debug
 
     # drugie okno: surowy obraz z kamery + kogo tracker rozpoznaje
-    mapper = PersonToFishMapper()
+    mapper = PersonToFishMapper(
+        **({"excitement_speed": args.excitement_speed} if args.excitement_speed is not None else {}))
     camera_window = None
     if not (args.no_camera_window or args.headless or args.screenshot):
         try:
