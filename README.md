@@ -34,7 +34,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 bash models/download_models.sh
 bash media/download_sample_video.sh      # nagranie testowe (domyślne źródło)
-python serve.py                          # --preview: okno z ramkami ludzi
+python serve.py --camera 4              # tylko kamera
 
 # terminal 2: morze
 cd web_visualization

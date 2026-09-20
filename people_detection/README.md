@@ -61,8 +61,9 @@ i narzędzia. Jednorazowo, bez edycji pliku: `python serve.py --camera 0 --mirro
 
 - `GET /fish` — strumień Server-Sent Events, ~12 wiadomości/s; `GET /state` — ostatnia
   wiadomość (podgląd: `curl localhost:8765/state`).
-- **Podgląd kamery: `--preview`** — okno pygame z obrazem i ramkami ludzi. To jest
-  domyślna droga: strojenie kadru robi się przy maszynie, obok okna akwarium.
+- **Podgląd kamery** — okno pygame z obrazem i ramkami ludzi, **domyślnie włączone**
+  (bez pasa „poza mapowaniem”). Gaszenie: `--no-preview` (maszyna bez ekranu),
+  pas z powrotem: `--band`, lustro: `--mirror`. Wystarczy `python serve.py --camera 4`.
 - SSE, bo dane płyną w jedną stronę, przeglądarka sama wznawia połączenie, a serwer
   to biblioteka standardowa Pythona — **zero nowych zależności na RPi**.
 - Nasłuchuje na `0.0.0.0`, więc gra może działać na innym urządzeniu w tej samej sieci.

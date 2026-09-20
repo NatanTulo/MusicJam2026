@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Batymetry Boat — łódka po prawdziwym dnie Bałtyku</title>
+  <title>Batymetry Boat · łódka po prawdziwym dnie Bałtyku</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛶</text></svg>" />
   <link rel="stylesheet" href="./src/style.css" />
 </head>
@@ -12,7 +12,7 @@
 
   <!-- Panel sterowania / głębokości -->
   <aside id="panel">
-    <h1>🛶 Batymetry Boat</h1>
+    <div id="panel-head"><h1>🛶 Batymetry Boat</h1><button id="panel-toggle" title="Schowaj panel">«</button></div>
     <p class="sub">Prawdziwe dno Bałtyku: <strong>EMODnet DTM 2024</strong></p>
 
     <label class="row dev">Region:
@@ -37,7 +37,7 @@
     </div>
 
     <div class="block">
-      <div class="block-title">RYBY — LUDZIE Z KAMERY <span id="fish-badge" class="badge info">0</span></div>
+      <div class="block-title">RYBY Z KAMERY <span id="fish-badge" class="badge info">0</span></div>
       <div id="fish-status" class="status warn dev">Łączenie z detekcją…</div>
       <label class="check dev"><input id="fish-demo" type="checkbox" /> tryb demo (sztuczni ludzie, bez detekcji)</label>
       <label class="check dev"><input id="fish-labels" type="checkbox" checked /> etykiety ryb
@@ -48,18 +48,18 @@
       <div class="block-title">MIESZKAŃCY MORZA (TŁO)</div>
       <label class="check"><input id="life-toggle" type="checkbox" checked /> pokaż i słuchaj</label>
       <div class="life-legend">
-        <span><i style="background:#cdb8ff"></i>meduzy — harmonia</span>
-        <span><i style="background:#b3c2cf"></i>morświny — rytm</span>
-        <span><i style="background:#9b8b78"></i>foki — melodia</span>
-        <span><i style="background:#e6c46e"></i>babki — perkusja</span>
-        <span><i style="background:#d6ecff"></i>ławice — migotanie</span>
-        <span><i style="background:#7fffd4"></i>plankton — iskierki</span>
+        <span><i style="background:#cdb8ff"></i>meduzy · harmonia</span>
+        <span><i style="background:#b3c2cf"></i>morświny · rytm</span>
+        <span><i style="background:#9b8b78"></i>foki · melodia</span>
+        <span><i style="background:#e6c46e"></i>babki · perkusja</span>
+        <span><i style="background:#d6ecff"></i>ławice · migotanie</span>
+        <span><i style="background:#7fffd4"></i>plankton · iskierki</span>
       </div>
       <div id="life-count" class="tiny"></div>
     </div>
 
     <div class="block">
-      <div class="block-title">DŹWIĘK — HYDROFON <span id="snd-badge" class="badge info">wył.</span></div>
+      <div class="block-title">HYDROFON <span id="snd-badge" class="badge info">wył.</span></div>
       <button id="snd-toggle" class="btn">🔊 Włącz dźwięk</button>
       <label class="slider">Głębokość hydrofonu <strong><span id="hyd-val">10.0</span> m</strong>
         <input id="hyd-depth" type="range" min="0" max="120" step="0.5" value="10" />
@@ -73,8 +73,8 @@
       <label class="slider dev">Rozstaw uszu hydrofonu <strong><span id="stereo-val">3.0</span> m</strong>
         <input id="stereo" type="range" min="0" max="6" step="0.5" value="3" />
       </label>
-      <button id="dj-toggle" class="btn">🎛 Panel DJ — muzyka spod wody</button>
-      <a class="btn" href="./music-roll.html" target="_blank" rel="noopener" style="display:block;text-align:center;margin-top:6px;text-decoration:none">🎹 Podgląd muzyczny — co jest grane</a>
+      <button id="dj-toggle" class="btn">🎛 Panel DJ · muzyka spod wody</button>
+      <a class="btn" href="./music-roll.html" target="_blank" rel="noopener" style="display:block;text-align:center;margin-top:6px;text-decoration:none">🎹 Podgląd muzyczny · co jest grane</a>
       <p class="tiny dev"><kbd>Q</kbd>/<kbd>E</kbd> hydrofon w górę / w dół ·
         <a href="./sound-lab.html" target="_blank" rel="noopener">laboratorium dźwięku →</a></p>
     </div>
@@ -107,6 +107,8 @@
     </div>
   </aside>
 
+  <button id="panel-open" title="Pokaż panel">»</button>
+
   <!-- Panel DJ: podwodny głośnik -->
   <aside id="dj" hidden>
     <div class="dj-title">🎛 PANEL DJ <span class="tiny">— jak brzmi muzyka puszczona spod wody, słuchana ze statku</span></div>
@@ -138,6 +140,7 @@
 
   <!-- Minimapa -->
   <div id="minimap">
+    <button id="mini-toggle" title="Zwiń/rozwiń mapę">–</button>
     <canvas id="mini"></canvas>
     <div class="legend">
       <span>0m</span>

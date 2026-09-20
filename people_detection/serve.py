@@ -12,9 +12,9 @@ sama wznawia polaczenie (EventSource), a serwer to biblioteka standardowa -
 zero dodatkowych pakietow na RPi5.
 
 Uzycie:
-    python serve.py                   # zrodlo z config.py (domyslnie nagranie testowe)
-    python serve.py --preview         # + okno z obrazem i ramkami ludzi
-    python serve.py --camera 0 --mirror
+    python serve.py --camera 4        # tylko kamera; podglad bez pasa domyslnie
+    python serve.py --no-preview      # bez okna (maszyna bez ekranu / RPi po ssh)
+    python serve.py --mirror --band   # lustro + z powrotem pas 'poza mapowaniem'
 """
 from __future__ import annotations
 
@@ -156,7 +156,8 @@ def build_payload(frame, targets, source_label: str) -> dict:
 def parse_args(argv=None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--camera", default=config.SOURCE, help=f"zrodlo obrazu (domyslnie z config.py: {config.SOURCE!r})")
-    p.add_argument("--mirror", action=argparse.BooleanOptionalAction, default=config.MIRROR)
+    p.add_argument("--mirror", action=argparse.BooleanOptionalAction, default=False,
+                   help="odbicie lustrzane (domyslnie wylaczone)")
     p.add_argument("--cam-width", type=int, default=640)
     p.add_argument("--cam-height", type=int, default=480)
     p.add_argument("--detector", default="auto", choices=["auto", "nanodet", "hog"])
@@ -174,10 +175,13 @@ def parse_args(argv=None) -> argparse.Namespace:
                         "PersonToFishMapper; siedzaca publika: np. 0.2)")
     p.add_argument("--host", default="0.0.0.0", help="0.0.0.0 = dostepne tez z innych urzadzen w sieci")
     p.add_argument("--port", type=int, default=config.BRIDGE_PORT)
-    p.add_argument("--preview", action="store_true", help="okno z obrazem i rozpoznanymi ludzmi")
-    p.add_argument("--band", action=argparse.BooleanOptionalAction, default=True,
+    p.add_argument("--preview", action=argparse.BooleanOptionalAction, default=True,
+                   help="okno z obrazem i rozpoznanymi ludzmi (domyslnie wlaczone; "
+                        "--no-preview na maszynie bez ekranu)")
+    p.add_argument("--band", action=argparse.BooleanOptionalAction, default=False,
                    help="przyciemnianie pasa 'poza mapowaniem' na podgladzie "
-                        "(--no-band wylacza sam rysunek, mapowanie dziala tak samo)")
+                        "(domyslnie wylaczone; --band wlacza z powrotem, "
+                        "sam rysunek, mapowanie dziala tak samo)")
     p.add_argument("--seconds", type=float, default=0.0, help="zakoncz po N sekundach (testy)")
     return p.parse_args(argv)
 
@@ -217,10 +221,14 @@ def main(argv=None) -> int:
     window = None
     y_band = mapper.current_y_band if args.band else None
     if args.preview:
-        import pygame
-        from people_detektion.preview_window import CameraWindow
-        pygame.init()
-        window = CameraWindow(width=480, y_band=y_band)
+        try:
+            import pygame
+            from people_detektion.preview_window import CameraWindow
+            pygame.init()
+            window = CameraWindow(width=480, y_band=y_band)
+        except Exception as exc:  # brak ekranu? lecimy headless, detekcja dziala dalej
+            print(f"Brak okna podgladu ({exc}); dzialam bez --preview.")
+            args.preview = False
 
     last_index = -1
     last_log = time.monotonic()

@@ -1396,6 +1396,28 @@ function bindInput() {
     showLabels = hud.labelsToggle.checked;
     for (const { sprite } of labelSprites) sprite.visible = showLabels;
   });
+  // Zwijane karty: klik w nagłówek bloku / etykietę głębokości / przycisk mapy.
+  document.querySelectorAll('#panel .block > .block-title, #snd-window > .block-title').forEach((t) => {
+    t.title = 'Zwiń/rozwiń kartę';
+    t.addEventListener('click', () => t.parentElement.classList.toggle('collapsed'));
+  });
+  const depthLabel = document.querySelector('#panel .depth-box .depth-label');
+  depthLabel?.addEventListener('click', () => depthLabel.parentElement.classList.toggle('collapsed'));
+  $('mini-toggle')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const box = $('minimap');
+    box.classList.toggle('collapsed');
+    e.target.textContent = box.classList.contains('collapsed') ? '+' : '–';
+  });
+  // Cały lewy panel: « chowa, » (pływający przycisk) pokazuje z powrotem.
+  $('panel-toggle')?.addEventListener('click', () => {
+    $('panel').classList.add('collapsed');
+    $('panel-open').classList.add('show');
+  });
+  $('panel-open')?.addEventListener('click', () => {
+    $('panel').classList.remove('collapsed');
+    $('panel-open').classList.remove('show');
+  });
 }
 
 // ---------------------------------------------------------------------------

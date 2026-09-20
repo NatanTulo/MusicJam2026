@@ -43,6 +43,37 @@ select {
 .status.bad { background: rgba(255,107,94,0.18); color: var(--bad); }
 
 .block { margin: 10px 0; }
+/* Zwijane karty: klik w nagłówek chowa treść (więcej gry, mniej danych). */
+.block-title { cursor: pointer; user-select: none; }
+.block-title::after { content: '▾'; float: right; opacity: 0.6; }
+.block.collapsed > :not(.block-title) { display: none !important; }
+.block.collapsed > .block-title::after { content: '▸'; }
+.depth-box.collapsed > :not(.depth-label) { display: none !important; }
+#snd-window.collapsed > :not(.block-title) { display: none !important; }
+#snd-window.collapsed > .block-title::after { content: '▸'; }
+.depth-box .depth-label { cursor: pointer; user-select: none; }
+/* Cały lewy panel chowa się jednym klikiem (« w nagłówku). */
+#panel-head { display: flex; align-items: center; justify-content: space-between; }
+#panel-toggle {
+  width: 26px; height: 26px; padding: 0; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.08);
+  color: var(--fg); font-size: 15px; line-height: 1; cursor: pointer; flex: none;
+}
+#panel.collapsed { display: none; }
+#panel-open {
+  position: fixed; top: 12px; left: 12px; z-index: 11;
+  width: 34px; height: 34px; padding: 0; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.3); background: rgba(6,20,32,0.82); color: #fff;
+  font-size: 17px; line-height: 1; cursor: pointer; display: none;
+}
+#panel-open.show { display: block; }
+#minimap.collapsed #mini, #minimap.collapsed .legend { display: none; }
+#mini-toggle {
+  position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; padding: 0;
+  border-radius: 50%; border: 1px solid rgba(255,255,255,0.3);
+  background: rgba(6,20,32,0.7); color: #fff; font-size: 14px; line-height: 1;
+  cursor: pointer; z-index: 2;
+}
 /* Tryb demo na hackaton: elementy techniczne zostają w DOM (JS ich potrzebuje),
    ale nie zajmują miejsca w panelu. */
 #panel .dev { display: none !important; }
