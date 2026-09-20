@@ -1,7 +1,7 @@
 // Symulacja ryb w morzu: pozycja na łowisku, głębokość, cykl życia.
 // Bez Three.js — renderer tylko czyta stan z list().
 import { FISH_CONFIG } from './config.js';
-import { SPECIES_BY_ID, speciesFor, personHue } from './species.js';
+import { speciesFor, personHue } from './species.js';
 
 const M_PER_DEG_LAT = 111320;
 export const BOUND = 'bound', SEARCHING = 'searching', LEAVING = 'leaving';
@@ -173,7 +173,8 @@ export class FishSchool {
       id: t.id, species: sp.id, hue: personHue(t.id),
       x: goal.x, y: goal.y, vx: 0, vy: 0, speed: 0, heading: Math.random() * Math.PI * 2,
       tx: goal.x, ty: goal.y,
-      depth: Math.max(1, seabed * (sp.band[0] + sp.band[1]) / 2),
+      depth: 1 + Math.random() * Math.max(1, seabed - 2),
+      depthTarget: null, depthTargetAt: 0,
       seabed, scale: t.scale ?? 1, excitement: 0, targetExcitement: 0,
       state: BOUND, alpha: 0, lost: 0, tail: Math.random() * 10,
     };
@@ -262,17 +263,20 @@ export class FishSchool {
     }
   }
 
-  /** Głębokość: warstwa gatunku × słup wody pod rybą, z powolnym falowaniem.
-   *  Pobudzony człowiek (szybki ruch) = ryba wypływa wyżej w swojej warstwie. */
+  /** Głębokość: losowa w całym słupie wody, niezależna od kamery.
+   *  Ryba powoli dryfuje do wylosowanego celu (jak przy nurkowaniu, ~1,5 m/s),
+   *  po dotarciu albo po kilkunastu sekundach losuje nowy. Gatunek daje głos
+   *  i wygląd, ale nie warstwę. */
   _updateDepth(f, dt) {
-    const sp = SPECIES_BY_ID[f.species];
     const seabed = this.depthAt(f.x, f.y);
     f.seabed = seabed;
-    const [lo, hi] = sp.band;
-    const mid = (lo + hi) / 2, half = (hi - lo) / 2;
-    let frac = mid + 0.55 * half * Math.sin(this.time * 0.17 + f.id * 1.7) - 0.8 * half * f.excitement;
-    frac = Math.max(lo, Math.min(hi, frac));
-    const target = Math.max(1, Math.min(frac * seabed, seabed - 1));
+    const [rMin, rMax] = this.cfg.depthRepick ?? [6, 14];
+    if (f.depthTarget == null || this.time >= (f.depthTargetAt ?? 0)
+        || Math.abs(f.depthTarget - f.depth) < 0.5) {
+      f.depthTarget = 1 + Math.random() * Math.max(1, seabed - 2);
+      f.depthTargetAt = this.time + rMin + Math.random() * Math.max(0, rMax - rMin);
+    }
+    const target = Math.max(1, Math.min(f.depthTarget, seabed - 1));
     // pionowo też realistycznie: ryba zmienia głębokość ~1 m/s, nie nurkuje jak winda
     const step = Math.max(-1.5 * dt, Math.min(1.5 * dt, (target - f.depth) * 1.2 * dt));
     f.depth += step;

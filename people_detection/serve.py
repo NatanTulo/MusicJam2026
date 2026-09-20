@@ -6,7 +6,6 @@
 Przegladarka otwiera strumien Server-Sent Events:
     GET http://<host>:8765/fish    strumien JSON, ~12 wiadomosci/s
     GET http://<host>:8765/state   ostatnia wiadomosc (do podgladu: curl)
-    GET http://<host>:8765/preview strona z obrazem kamery i detekcja (MJPEG)
 
 Dlaczego SSE, a nie WebSocket: dane plyna tylko w jedna strone, przegladarka
 sama wznawia polaczenie (EventSource), a serwer to biblioteka standardowa -
@@ -28,7 +27,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import config
 from fish.mapping import PersonToFishMapper
-from people_detektion import preview_jpeg
 from people_detektion.pipeline import PeoplePipeline
 
 
@@ -70,49 +68,7 @@ class Broadcaster:
             q.put_nowait(data)
 
 
-class PreviewBus:
-    """Ostatnia klatka podgladu jako JPEG. Koduje sie tylko wtedy, gdy ktos patrzy."""
-
-    def __init__(self) -> None:
-        self._cond = threading.Condition()
-        self._jpeg: bytes | None = None
-        self._seq = 0
-        self.viewers = 0
-
-    def publish(self, jpeg: bytes) -> None:
-        with self._cond:
-            self._jpeg = jpeg
-            self._seq += 1
-            self._cond.notify_all()
-
-    def latest(self) -> bytes | None:
-        with self._cond:
-            return self._jpeg
-
-    def wait_next(self, seen: int, timeout: float = 5.0) -> tuple[bytes | None, int]:
-        """Blokuje do nastepnej klatki (albo timeoutu) - zero odpytywania w petli."""
-        with self._cond:
-            if self._seq == seen:
-                self._cond.wait(timeout)
-            return self._jpeg, self._seq
-
-
-PREVIEW_PAGE = b"""<!doctype html>
-<meta charset="utf-8"><title>Kamera - kogo widze</title>
-<style>
-  body { margin: 0; background: #0a0c12; color: #e4eef8; font: 14px system-ui, sans-serif;
-         display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px; }
-  img { width: min(95vw, 900px); image-rendering: pixelated; border-radius: 6px; }
-  a { color: #7fc4ff; }
-</style>
-<h3>Kamera - kogo widze</h3>
-<img src="/preview.mjpg" alt="podglad kamery">
-<p>Ramka = osoba (kolor jak jej ryba), krzyzyk = stopy, ciemny pas = poza mapowaniem.
-   Dane ryb: <a href="/state">/state</a></p>
-"""
-
-
-def make_handler(bus: Broadcaster, preview: PreviewBus):
+def make_handler(bus: Broadcaster):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -128,26 +84,6 @@ def make_handler(bus: Broadcaster, preview: PreviewBus):
             path = self.path.split("?")[0]
             if path == "/fish":
                 self._stream()
-            elif path == "/preview":
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Content-Length", str(len(PREVIEW_PAGE)))
-                self._cors()
-                self.end_headers()
-                self.wfile.write(PREVIEW_PAGE)
-            elif path == "/preview.mjpg":
-                self._mjpeg()
-            elif path == "/preview.jpg":
-                jpeg = preview.latest()
-                if jpeg is None:
-                    self.send_error(503, "brak podgladu (uruchom z --web-preview)")
-                    return
-                self.send_response(200)
-                self.send_header("Content-Type", "image/jpeg")
-                self.send_header("Content-Length", str(len(jpeg)))
-                self._cors()
-                self.end_headers()
-                self.wfile.write(jpeg)
             elif path == "/state":
                 body = bus.latest
                 self.send_response(200)
@@ -157,8 +93,7 @@ def make_handler(bus: Broadcaster, preview: PreviewBus):
                 self.end_headers()
                 self.wfile.write(body)
             else:
-                body = (b"MusicJam fish bridge: GET /fish (SSE), GET /state (JSON), "
-                        b"GET /preview (obraz z kamery)\n")
+                body = b"MusicJam fish bridge: GET /fish (SSE), GET /state (JSON)\n"
                 self.send_response(200)
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
@@ -187,31 +122,6 @@ def make_handler(bus: Broadcaster, preview: PreviewBus):
                 pass
             finally:
                 bus.unsubscribe(q)
-
-        def _mjpeg(self) -> None:
-            """multipart/x-mixed-replace: przegladarka trzyma jedno polaczenie
-            i podmienia obrazek, bez JS i bez odpytywania."""
-            boundary = b"mjpegframe"
-            self.send_response(200)
-            self.send_header("Content-Type", b"multipart/x-mixed-replace; boundary=" + boundary)
-            self._cors()
-            self.end_headers()
-            preview.viewers += 1
-            seen = -1
-            try:
-                while True:
-                    jpeg, seen = preview.wait_next(seen)
-                    if jpeg is None:
-                        continue
-                    self.wfile.write(b"--" + boundary + b"\r\nContent-Type: image/jpeg\r\n"
-                                     + b"Content-Length: " + str(len(jpeg)).encode() + b"\r\n\r\n")
-                    self.wfile.write(jpeg)
-                    self.wfile.write(b"\r\n")
-                    self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError, OSError):
-                pass
-            finally:
-                preview.viewers -= 1
 
     return Handler
 
@@ -265,9 +175,9 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--host", default="0.0.0.0", help="0.0.0.0 = dostepne tez z innych urzadzen w sieci")
     p.add_argument("--port", type=int, default=config.BRIDGE_PORT)
     p.add_argument("--preview", action="store_true", help="okno z obrazem i rozpoznanymi ludzmi")
-    p.add_argument("--web-preview", action=argparse.BooleanOptionalAction, default=False,
-                   help="podglad kamery w przegladarce (http://<host>:PORT/preview) - "
-                        "zamiast okna, gdy przy maszynie nie ma ekranu (RPi po ssh)")
+    p.add_argument("--band", action=argparse.BooleanOptionalAction, default=True,
+                   help="przyciemnianie pasa 'poza mapowaniem' na podgladzie "
+                        "(--no-band wylacza sam rysunek, mapowanie dziala tak samo)")
     p.add_argument("--seconds", type=float, default=0.0, help="zakoncz po N sekundach (testy)")
     return p.parse_args(argv)
 
@@ -282,7 +192,7 @@ def main(argv=None) -> int:
         camera=source, width=args.cam_width, height=args.cam_height,
         mirror=args.mirror, detector=args.detector, model_path=args.model,
         num_threads=args.threads, detect_fps=args.detect_fps, score_threshold=args.score,
-        preview_width=480 if (args.preview or args.web_preview) else 0,
+        preview_width=480 if args.preview else 0,
         tracker_kwargs={"max_age": args.max_age, "reid_window": args.reid_window},
     )
     try:
@@ -296,23 +206,21 @@ def main(argv=None) -> int:
     mapper = PersonToFishMapper(
         **({"excitement_speed": args.excitement_speed} if args.excitement_speed is not None else {}))
     bus = Broadcaster()
-    preview_bus = PreviewBus()
-    server = ThreadingHTTPServer((args.host, args.port), make_handler(bus, preview_bus))
+    server = ThreadingHTTPServer((args.host, args.port), make_handler(bus))
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, name="http", daemon=True).start()
 
     label = str(args.camera)
     print(f"Mostek ryb: http://127.0.0.1:{args.port}/fish  (zrodlo: {label}, detektor: {pipeline.detector.name})")
-    if args.web_preview:
-        print(f"Podglad kamery:  http://127.0.0.1:{args.port}/preview")
     print("Otworz Batymetry Boat (web_visualization: npm run dev) - ryby pojawia sie w Zatoce Gdanskiej.")
 
     window = None
+    y_band = mapper.current_y_band if args.band else None
     if args.preview:
         import pygame
         from people_detektion.preview_window import CameraWindow
         pygame.init()
-        window = CameraWindow(width=480, y_band=mapper.current_y_band)
+        window = CameraWindow(width=480, y_band=y_band)
 
     last_index = -1
     last_log = time.monotonic()
@@ -326,10 +234,6 @@ def main(argv=None) -> int:
                 bus.publish(build_payload(frame, targets, label))
                 if window is not None:
                     window.update(frame)
-                if preview_bus.viewers > 0:      # kodujemy JPEG tylko gdy ktos oglada
-                    jpeg = preview_jpeg.encode(frame, y_band=mapper.current_y_band)
-                    if jpeg is not None:
-                        preview_bus.publish(jpeg)
 
             if window is not None:
                 import pygame

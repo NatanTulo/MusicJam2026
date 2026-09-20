@@ -63,10 +63,11 @@ chodzą po podłodze. Przycisk **„Pokaż łowisko”** ustawia kamerę nad ryb
   [`src/fish/config.js`](src/fish/config.js), linia 16 (`ground`). Dno opada tam
   z ~20 do ~70 m, więc głębokości są naprawdę różne. Cel na lądzie (np. Mierzeja)
   jest przesuwany do najbliższej wody; ryby omijają płycizny < 4 m.
-- **Na jakiej głębokości:** gatunek (stały dla osoby) wyznacza warstwę jako ułamek słupa
-  wody pod rybą: szprot 5–28 %, śledź 28–58 %, dorsz 60–86 %, flądra 88–97 %.
-  Nad Głębią Gdańską ta sama ryba pływa więc głębiej niż nad płycizną. W warstwie
-  powoli faluje, a gdy człowiek się rusza — wypływa wyżej.
+- **Na jakiej głębokości:** losowo w całym słupie wody (1 m pod taflą – 0,5 m nad
+  dnem), niezależnie od kamery. Ryba powoli dryfuje do wylosowanego celu
+  (~1,5 m/s jak przy nurkowaniu), po dotarciu albo po 6–14 s losuje nowy
+  (`depthRepick` w [`src/fish/config.js`](src/fish/config.js)). Gatunek (stały
+  dla osoby) daje głos i wygląd, ale nie warstwę.
 - **Cykl życia:** człowiek zgubiony przez detektor → ryba krąży i miga (1,5 s);
   człowiek wyszedł → ryba odpływa od środka łowiska i gaśnie (3 s).
 - **Kolor ryby = kolor ramki osoby** w podglądzie kamery (`python serve.py --preview`).
