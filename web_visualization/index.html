@@ -15,7 +15,7 @@
     <h1>🛶 Batymetry Boat</h1>
     <p class="sub">Prawdziwe dno Bałtyku: <strong>EMODnet DTM 2024</strong></p>
 
-    <label class="row">Region:
+    <label class="row dev">Region:
       <select id="region-select"></select>
     </label>
 
@@ -38,13 +38,13 @@
 
     <div class="block">
       <div class="block-title">RYBY — LUDZIE Z KAMERY <span id="fish-badge" class="badge info">0</span></div>
-      <div id="fish-status" class="status warn">Łączenie z detekcją…</div>
-      <label class="check"><input id="fish-demo" type="checkbox" /> tryb demo (sztuczni ludzie, bez detekcji)</label>
-      <label class="check"><input id="fish-labels" type="checkbox" checked /> etykiety ryb</label>
+      <div id="fish-status" class="status warn dev">Łączenie z detekcją…</div>
+      <label class="check dev"><input id="fish-demo" type="checkbox" /> tryb demo (sztuczni ludzie, bez detekcji)</label>
+      <label class="check dev"><input id="fish-labels" type="checkbox" checked /> etykiety ryb
       <button id="fish-goto" class="btn">🐟 Pokaż łowisko</button>
     </div>
 
-    <div class="block">
+    <div class="block dev">
       <div class="block-title">MIESZKAŃCY MORZA (TŁO)</div>
       <label class="check"><input id="life-toggle" type="checkbox" checked /> pokaż i słuchaj</label>
       <div class="life-legend">
@@ -64,23 +64,22 @@
       <label class="slider">Głębokość hydrofonu <strong><span id="hyd-val">10.0</span> m</strong>
         <input id="hyd-depth" type="range" min="0" max="120" step="0.5" value="10" />
       </label>
-      <label class="slider">Stan morza <strong id="sea-state-val">2</strong>
+      <label class="slider dev">Stan morza <strong id="sea-state-val">2</strong>
         <input id="sea-state" type="range" min="0" max="6" step="1" value="2" />
       </label>
-      <label class="slider">Tło muzyczne (mieszkańcy morza)
+      <label class="slider dev">Tło muzyczne (mieszkańcy morza)
         <input id="life-level" type="range" min="0" max="2" step="0.05" value="1" />
       </label>
-      <label class="slider">Rozstaw uszu hydrofonu <strong><span id="stereo-val">3.0</span> m</strong>
+      <label class="slider dev">Rozstaw uszu hydrofonu <strong><span id="stereo-val">3.0</span> m</strong>
         <input id="stereo" type="range" min="0" max="6" step="0.5" value="3" />
       </label>
-      <div id="snd-info" class="snd-info">Dźwięk wyłączony.</div>
       <button id="dj-toggle" class="btn">🎛 Panel DJ — muzyka spod wody</button>
       <a class="btn" href="./music-roll.html" target="_blank" rel="noopener" style="display:block;text-align:center;margin-top:6px;text-decoration:none">🎹 Podgląd muzyczny — co jest grane</a>
-      <p class="tiny"><kbd>Q</kbd>/<kbd>E</kbd> hydrofon w górę / w dół ·
+      <p class="tiny dev"><kbd>Q</kbd>/<kbd>E</kbd> hydrofon w górę / w dół ·
         <a href="./sound-lab.html" target="_blank" rel="noopener">laboratorium dźwięku →</a></p>
     </div>
 
-    <div class="block">
+    <div class="block dev">
       <div class="block-title">TEMPO (PRĘDKOŚĆ TESTOWA) <span id="tempo-badge" class="badge">TEST ×1</span></div>
       <select id="tempo-select">
         <option value="1" selected>1× — realistycznie (~16 m/s)</option>
@@ -91,7 +90,7 @@
       </select>
     </div>
 
-    <div class="block">
+    <div class="block dev">
       <div class="block-title">PRZEWYŻSZENIE DNA <span id="vex-val">20×</span></div>
       <input id="vex" type="range" min="1" max="40" step="1" value="20" />
       <label class="check"><input id="water-xray" type="checkbox" checked /> prześwit dna (półprzezroczysta woda)</label>
@@ -104,7 +103,7 @@
     <div class="block help">
       <div class="block-title">STEROWANIE</div>
       <p><kbd>W</kbd>/<kbd>S</kbd> gaz / wstecz · <kbd>A</kbd>/<kbd>D</kbd> skręt · mysz: obrót/zoom · <kbd>R</kbd> restart · <kbd>C</kbd> kamera · <kbd>Q</kbd>/<kbd>E</kbd> hydrofon · <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd>/<kbd>4</kbd>/<kbd>5</kbd> tempo 1×/100×/500×/1000×/5000×</p>
-      <p class="tiny">API dla dewelopera: <code>boatAPI.getDepth()</code>, <code>boatAPI.getPosition()</code> — w konsoli przeglądarki.</p>
+      <p class="tiny dev">API dla dewelopera: <code>boatAPI.getDepth()</code>, <code>boatAPI.getPosition()</code> — w konsoli przeglądarki.</p>
     </div>
   </aside>
 
@@ -145,6 +144,12 @@
       <div class="grad"></div>
       <span>60m+</span>
     </div>
+  </div>
+
+  <!-- HYDROFON — odczyt na żywo -->
+  <div id="snd-window">
+    <div class="block-title">🔊 HYDROFON — CO SŁYCHAĆ</div>
+    <div id="snd-info" class="snd-info">Dźwięk wyłączony. Przeglądarka pozwala go włączyć dopiero po kliknięciu.</div>
   </div>
 
   <!-- Sterowanie dotykowe -->

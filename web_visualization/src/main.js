@@ -1146,11 +1146,13 @@ function renderMiniBase() {
 function drawMini() {
   const cv = hud.mini, ctx = cv.getContext('2d');
   const S = (cv.width = cv.clientWidth * 2 || 440);
-  cv.height = S;
+  // Wysokość canvasu = proporcje siatki (Bałtyk jest szerszy niż wyższy),
+  // żeby pod mapą nie zostawała pusta plama.
+  const H = Math.max(1, Math.round(S * (grid.nLat / grid.nLon)));
+  cv.height = H;
   if (!miniImg) return;
   ctx.imageSmoothingEnabled = true;
-  ctx.drawImage(miniImg, 0, 0, S, S * (grid.nLat / grid.nLon));
-  const H = S * (grid.nLat / grid.nLon);
+  ctx.drawImage(miniImg, 0, 0, S, H);
   const toXY = (lat, lon) => [
     ((lon - grid.lon0) / (grid.lon1 - grid.lon0)) * S,
     (1 - (lat - grid.lat0) / (grid.lat1 - grid.lat0)) * H,
