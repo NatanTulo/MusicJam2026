@@ -763,7 +763,7 @@ export class SeaSoundEngine {
     const passFrac = partialsPass / sp.voice.partials.reduce((s2, v) => s2 + v, 0);
     return {
       ...cp,
-      id: f.id, species: sp.name, depth: f.depth, midi, f0, note: noteName(midi),
+      id: f.id, species: sp.name, speciesId: f.species, depth: f.depth, midi, f0, note: noteName(midi),
       level, excitement: f.excitement ?? 0, bright: sp.voice.bright * (0.7 + 0.8 * (f.excitement ?? 0)),
       tail: cp.tail * level > 0 ? cp.tail : 0,
       priorityDb: dB(cp.loud * level * Math.max(passFrac, 1e-3)),
@@ -846,7 +846,7 @@ export class SeaSoundEngine {
     const h = listener.depth, D = listener.seabed;
     const profile = env.profile || BALTIC_SUMMER;
     const rows = this._plans.map((p) => ({
-      id: p.id, species: p.species, depth: p.depth, note: p.note, hz: p.f0,
+      id: p.id, species: p.species, speciesId: p.speciesId, depth: p.depth, midi: p.midi, note: p.note, hz: p.f0,
       range: p.range, dist: p.dist, delay: p.main, doppler: p.doppler ?? 0,
       itdMs: (p.itd ?? 0) * 1000, ildDb: p.ildDb ?? 0,
       levelDb: p.priorityDb, voiced: p.voiced, cutoffHz: p.cutoffHz, landBlocked: p.landBlocked,

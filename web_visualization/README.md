@@ -129,6 +129,12 @@ http://127.0.0.1:5173/sound-lab.html) — przekrój morza, przeciągane ryby i h
 **echogram** (wszystkie drogi dźwięku wybranej ryby: kiedy przychodzą i jak głośno),
 suwaki, widmo, liczby. Ten sam silnik co w grze.
 
+**Podgląd muzyczny:** [`music-roll.html`](music-roll.html) (`npm run dev` →
+http://127.0.0.1:5173/music-roll.html) — piano-roll tego, co jest grane, jak w FL Studio:
+oś pozioma to czas, pionowa to wysokość dźwięku, kolory to instrumenty (gatunki ryb
+i mieszkańcy morza w pasie perkusji). Gdy w grze włączony jest dźwięk, podgląd
+podłącza się na żywo (BroadcastChannel); bez gry gra demo na tych samych zasadach.
+
 Koncepcja, wzory, uproszczenia i pomiary: **[docs/dzwiek.md](docs/dzwiek.md)**.
 
 ```bash

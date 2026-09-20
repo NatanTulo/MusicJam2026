@@ -135,6 +135,7 @@ export class LifeSound {
     this.engine = engine;
     this.next = new Map();     // id -> czas następnego odezwania się
     this.recent = [];          // [czas, rodzaj] — do UI
+    this.eventFeed = [];       // [{wall, kind}] — surowe zdarzenia dla piano-roll (music-roll.html)
     this.flashes = new Map();  // id -> {start, dur} (ms, zegar ścienny) — do rozbłysków w 3D
     this._cache = new Map();
   }
@@ -234,9 +235,13 @@ export class LifeSound {
     const plan = eng._channelPlan({ x: c.x, y: c.y, z: c.depth }, listener, env, scan, fRef, { taps: 3, echoes: 1, maxOrder: 4 });
     if (plan.landBlocked || plan.loud * level < 3e-5) return;
     this.recent.push([te, c.kind]);
+    // eventFeed: znacznik w epoce (Date.now), żeby inny tab (piano-roll)
+    // mógł go położyć na wspólnej osi czasu; rozbłysk 3D zostaje na performance.now.
+    const lagMs = Math.max(0, (te - ctx.currentTime) * 1000);
+    this.eventFeed.push({ wall: Date.now() + lagMs, kind: c.kind });
+    if (this.eventFeed.length > 300) this.eventFeed.splice(0, this.eventFeed.length - 300);
     // rozbłysk w 3D: renderer czyta flashes i rozjaśnia kropkę, która gra.
     // start w zegarze ściennym (dźwięk jest planowany z wyprzedzeniem te-now).
-    const lagMs = Math.max(0, (te - ctx.currentTime) * 1000);
     this.flashes.set(c.id, { start: performance.now() + lagMs, dur: Math.min(buf.duration * 1000, 4000) });
 
     const nodes = [];

@@ -14,6 +14,13 @@ export class SoundController {
     this.wantedDepth = 10;       // [m] ustawienie suwaka
     this.depth = 10;             // [m] faktyczne (nie głębiej niż dno - 1 m)
     this._lastUi = -1;
+    // Live feed dla podglądu muzycznego (music-roll.html): ta sama karta,
+    // osobny tab — synchronizacja przez BroadcastChannel.
+    this._roll = null;
+    this._rollFeedWall = 0;
+    try {
+      this._roll = new BroadcastChannel('musicjam-roll');
+    } catch { /* brak BroadcastChannel — gra działa dalej bez podglądu */ }
     this._buildVisual(scene);
     this._bindUi();
   }
@@ -113,6 +120,7 @@ export class SoundController {
       badge.style.display = 'inline-block';
       badge.textContent = this.engine.running ? 'gra' : 'wył.';
     }
+    this._broadcastRoll();
     if (!info) return;
     if (!this.engine.running) {
       info.textContent = 'Dźwięk wyłączony. Przeglądarka pozwala go włączyć dopiero po kliknięciu.';
@@ -138,5 +146,31 @@ export class SoundController {
       `Tło (zdarzeń / 10 s): ${Object.entries(i.life || {}).map(([k, n]) => `${LIFE_NAMES[k] ?? k} ${n}`).join(' · ') || '—'}`,
       echo ? `Echo od terenu: #${echo.id} od ${echo.label}u ${(echo.range / 1000).toFixed(1)} km, po ${(echo.delay).toFixed(2)} s` : 'Echo od terenu: brak (brak ścian w zasięgu)',
     ].join('<br>');
+  }
+
+  /** Snapshot dla piano-roll (music-roll.html): co jest grane, 4×/s.
+   *  fish: jeden punkt na rybę (ryby brzmią ciągle -> strona rysuje smugi);
+   *  lifeEvents: surowe zdarzenia tła od ostatniego snapshotu. */
+  _broadcastRoll() {
+    if (!this._roll) return;
+    try {
+      const i = this.engine.info;
+      const feed = this.engine.lifeSound?.eventFeed ?? [];
+      const lifeEvents = feed.filter((e) => e.wall > this._rollFeedWall);
+      for (const e of lifeEvents) this._rollFeedWall = Math.max(this._rollFeedWall, e.wall);
+      this._roll.postMessage({
+        type: 'sound-snapshot',
+        wall: Date.now(),
+        audible: this.engine.running,
+        mode: i.mode ? { id: i.mode.id, name: i.mode.name, mood: i.mode.mood, steps: i.mode.steps } : null,
+        fish: (i.fish ?? []).map((r) => ({
+          id: r.id, species: r.speciesId ?? r.species, midi: Math.round(r.midi ?? 69),
+          note: r.note, hz: r.hz, depth: r.depth,
+          levelDb: r.levelDb, voiced: !!r.voiced,
+        })),
+        lifeEvents: lifeEvents.map((e) => ({ wall: e.wall, kind: e.kind })),
+        lifeCounts: i.life ?? {},
+      });
+    } catch { /* podgląd nie może wywalić gry */ }
   }
 }

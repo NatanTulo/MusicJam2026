@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Podgląd muzyczny — co jest grane | MusicJam2026</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎹</text></svg>" />
+  <link rel="stylesheet" href="./src/music-roll.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>🎹 Podgląd muzyczny <span id="src-badge" class="badge demo">DEMO</span></h1>
+      <p class="sub">Oś pozioma to <strong>czas</strong> (gra jedzie w prawo, historia w lewo),
+        oś pionowa to <strong>wysokość dźwięku</strong> (jak w FL Studio / Abletonie).
+        Ryby płyną smugami, tło morza stuka w pasie perkusji na dole.
+        <span id="src-hint">Otwórz grę w drugim tabie (<a href="./index.html" target="_blank" rel="noopener">Batymetry Boat</a>),
+        włącz dźwięk — ten podgląd sam się przełączy na żywo.</span></p>
+    </div>
+    <div class="hdr-ctl">
+      <label>Okno czasu
+        <select id="window">
+          <option value="15">15 s</option>
+          <option value="30" selected>30 s</option>
+          <option value="60">60 s</option>
+          <option value="120">120 s</option>
+        </select>
+      </label>
+      <label class="check"><input id="follow" type="checkbox" checked /> śledź na żywo</label>
+      <button id="clear" class="btn sm">🧹 wyczyść</button>
+    </div>
+  </header>
+
+  <div id="mode-bar">
+    <span class="mode-label">Skala:</span>
+    <strong id="mode-name">—</strong>
+    <span id="mode-mood" class="muted"></span>
+    <span id="now-playing" class="now"></span>
+  </div>
+
+  <main>
+    <section class="roll-wrap">
+      <canvas id="roll"></canvas>
+      <div id="empty-hint" class="empty" hidden>Czekam na dźwięk… włącz grę albo poczekaj na demo.</div>
+    </section>
+    <aside class="tracks">
+      <div class="trk-head">ŚCIEŻKI <span class="muted">— klik = wycisz podgląd</span></div>
+      <div id="fish-tracks"></div>
+      <div class="trk-head">TŁO MORZA <span class="muted">— pas perkusji</span></div>
+      <div id="life-tracks"></div>
+      <details class="help">
+        <summary>Jak to czytać?</summary>
+        <ul>
+          <li><b>Smuga</b> = ryba brzmi ciągle; gdy ryba płynie głębiej, smuga zjeżdża w dół (oktawa na 30 m).</li>
+          <li><b>Kolor smugi</b> = gatunek (barwa głosu): szprot, śledź, dorsz, flądra.</li>
+          <li><b>Jasne rzędy</b> = dźwięki aktualnej skali (tonika D); ciemne to półtony poza skalą.</li>
+          <li><b>Kropki na dole</b> = mieszkańcy morza: meduza (harmonia), morświn (rytm),
+            foka (melodia), babka (perkusja), ławica (migotanie), plankton (iskierki).</li>
+          <li>Grubość smugi = głośność ryby przy hydrofonie. Przerywana = ryba poza zasięgiem / niema.</li>
+        </ul>
+      </details>
+      <p class="tiny">Gra: <a href="./index.html" target="_blank" rel="noopener">Batymetry Boat</a> ·
+        <a href="./sound-lab.html" target="_blank" rel="noopener">laboratorium dźwięku →</a></p>
+    </aside>
+  </main>
+
+  <script type="module" src="./src/musicRoll.js"></script>
+</body>
+</html>
